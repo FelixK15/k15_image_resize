@@ -3,6 +3,12 @@
 #include <windows.h>
 #include <stdio.h>
 
+#define K15_IR_IMPLEMENTATION
+#include "../k15_image_resize.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "../stb_image.h"
+
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -52,6 +58,13 @@ HBITMAP backbufferBitmap = 0;
 uint32 screenWidth = 1024;
 uint32 screenHeight = 768;
 uint32 timePerFrameInMS = 16;
+
+uint32 sourceImageWidth = 0;
+uint32 sourceImageHeight = 0;
+uint32 destinationImageWidth = 0;
+uint32 destinationImageHeight = 0;
+unsigned char* sourceImageData = 0;
+unsigned char* destinationImageData = 0;
 
 void K15_WindowCreated(HWND p_HWND, UINT p_Message, WPARAM p_wParam, LPARAM p_lParam)
 {
@@ -164,8 +177,8 @@ HWND setupWindow(HINSTANCE p_Instance, int p_Width, int p_Height)
 		MessageBox(0, "Error creating Window.\n", "Error!", 0);
 	else
 	{
-		ShowWindow(hwnd, SW_SHOW);
 		allocateDebugConsole();
+		ShowWindow(hwnd, SW_SHOW);
 	}
 	return hwnd;
 }
@@ -197,6 +210,17 @@ void setup(HWND p_HWND)
 	HDC originalDC = GetDC(p_HWND);
 	backbufferDC = CreateCompatibleDC(originalDC);
 	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
+
+	int sourceImageColorComponents = 0;
+	sourceImageData = stbi_load("../image.png", &sourceImageWidth, &sourceImageHeight, &sourceImageColorComponents, 0);
+
+	destinationImageWidth = sourceImageWidth / 2;
+	destinationImageHeight = sourceImageHeight / 2;
+
+	destinationImageData = (unsigned char*)malloc(destinationImageHeight * destinationImageWidth * sourceImageColorComponents);
+
+	K15_IRScaleImageData(sourceImageData, sourceImageWidth, sourceImageHeight, (kir_pixel_format)sourceImageColorComponents,
+		destinationImageData, destinationImageWidth, destinationImageHeight, (kir_pixel_format)sourceImageColorComponents);
 }
 
 void swapBuffers(HWND p_HWND)

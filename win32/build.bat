@@ -2,8 +2,8 @@
 echo Searching for Visual Studio installation...
 setlocal enableextensions enabledelayedexpansion
 
-set PROJECT_NAME=k15_win32template_gdi
-set C_FILE_NAME=k15_win32template_gdi.c
+set PROJECT_NAME=win32_image_resize_sample
+set C_FILE_NAME=win32_image_resize_sample.c
 
 set COMPILER_OPTIONS=/nologo /Od /TC /MTd /W3 /Od /Gm- /Z7 /Fe!PROJECT_NAME!.exe
 set LINKER_OPTIONS=/PDB:!PROJECT_NAME!.pdb

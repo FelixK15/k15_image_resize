@@ -68,8 +68,8 @@ typedef enum
 
 kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8 p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
-	kir_32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat);
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat);
 
 #ifdef K15_IR_IMPLEMENTATION
 
@@ -109,27 +109,39 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 # define kir_internal static
 #endif //kia_internal
 
-kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
+kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth,
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8 p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
-	kir_32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
+	float horizontalWeight = (float)p_DestinationImagePixelWidth / (float)p_SourceImagePixelWidth;
+	float verticalWeight = (float)p_DestinationImagePixelHeight / (float)p_SourceImagePixelHeight;
+
+	int verticalStepSize = p_SourceImagePixelHeight / p_DestinationImagePixelHeight;
+	int horizontalStepSize = p_SourceImagePixelWidth / p_DestinationImagePixelWidth;
+
+	int stepIndex = 0;
+
+	for (stepIndex = 0; stepIndex < p_SourceImagePixelWidth; stepIndex += horizontalStepSize)
+	{
+
+	}
+
 	return K15_IR_RESULT_SUCCESS;
 }
 
 kir_internal kir_result _K15_IRUpscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8 p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
-	kir_32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
 	return K15_IR_RESULT_SUCCESS;
 }
 
-
 kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8 p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
-	kir_32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
 	kir_u32 sourceImageArea = p_SourceImagePixelHeight * p_SourceImagePixelWidth;
 	kir_u32 destinationImageArea = p_DestinationImagePixelHeight * p_DestinationImagePixelWidth;
@@ -145,7 +157,7 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 	}
 	else if (sourceImageArea < destinationImageArea)
 	{
-		result = _K15_IRDUpscaleImageData(p_SourceImageData, p_SourceImagePixelWidth,
+		result = _K15_IRUpscaleImageData(p_SourceImageData, p_SourceImagePixelWidth,
 			p_SourceImagePixelHeight, p_SourceImageDataPixelFormat, p_DestinationImageData,
 			p_DestinationImagePixelWidth, p_DestinationImagePixelHeight, 
 			p_DestinationImageDataPixelFormat);
