@@ -4,10 +4,13 @@
 #include <stdio.h>
 
 #define K15_IR_IMPLEMENTATION
-#include "../k15_image_resize.h"
+#include "k15_image_resize.h"
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "../stb_image.h"
+#include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "user32.lib")
@@ -212,15 +215,25 @@ void setup(HWND p_HWND)
 	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
-	sourceImageData = stbi_load("../image.png", &sourceImageWidth, &sourceImageHeight, &sourceImageColorComponents, 0);
+	sourceImageData = stbi_load("image.png", &sourceImageWidth, &sourceImageHeight, 
+		&sourceImageColorComponents, 0);
 
-	destinationImageWidth = sourceImageWidth / 2;
-	destinationImageHeight = sourceImageHeight / 2;
+	destinationImageWidth = 8;
+	destinationImageHeight = 8;
+
+	// destinationImageWidth = sourceImageWidth / 2;
+	// destinationImageHeight = sourceImageHeight / 2;
 
 	destinationImageData = (unsigned char*)malloc(destinationImageHeight * destinationImageWidth * sourceImageColorComponents);
 
 	K15_IRScaleImageData(sourceImageData, sourceImageWidth, sourceImageHeight, (kir_pixel_format)sourceImageColorComponents,
 		destinationImageData, destinationImageWidth, destinationImageHeight, (kir_pixel_format)sourceImageColorComponents);
+
+	stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 
+		sourceImageColorComponents, destinationImageData, 
+		destinationImageWidth * sourceImageColorComponents);
+
+	exit(0);
 }
 
 void swapBuffers(HWND p_HWND)

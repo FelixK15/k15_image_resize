@@ -109,22 +109,99 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 # define kir_internal static
 #endif //kia_internal
 
+kir_internal kir_u8 _K15_IRLerpU8(float p_Factor, kir_u8 p_StartValue, kir_u8 p_EndValue)
+{
+	return (kir_u8)((float)p_StartValue * (1.f - p_Factor) + ((float)p_EndValue * p_Factor));
+}
+
 kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth,
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
 	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
 	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
-	float horizontalWeight = (float)p_DestinationImagePixelWidth / (float)p_SourceImagePixelWidth;
-	float verticalWeight = (float)p_DestinationImagePixelHeight / (float)p_SourceImagePixelHeight;
+	int pixelIndex = 0;
+	int numDestinationPixels = p_DestinationImagePixelHeight * p_DestinationImagePixelWidth;
 
-	int verticalStepSize = p_SourceImagePixelHeight / p_DestinationImagePixelHeight;
-	int horizontalStepSize = p_SourceImagePixelWidth / p_DestinationImagePixelWidth;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	int stepIndex = 0;
-
-	for (stepIndex = 0; stepIndex < p_SourceImagePixelWidth; stepIndex += horizontalStepSize)
+	for (; posY < p_DestinationImagePixelHeight; ++posY)
 	{
+		for (; posX < p_DestinationImagePixelWidth; ++posX)
+		{
+			kir_u32 pixelIndex = posX + (posY * p_DestinationImagePixelWidth);
 
+			float u = (float)posX / (float)p_DestinationImagePixelWidth;
+			float v = (float)posY / (float)p_DestinationImagePixelHeight;
+
+			float sourcePosX = u * (float)p_SourceImagePixelWidth;
+			float sourcePosY = v * (float)p_SourceImagePixelHeight;
+
+			int fixedSourcePosX = (int)(sourcePosX);
+			int fixedSourcePosY = (int)(sourcePosY);
+
+			float fractSourcePosX = sourcePosX - (float)fixedSourcePosX;
+			float fractSourcePosY = sourcePosY - (float)fixedSourcePosY;
+
+			int destPixelIndices[] = {
+				(fixedSourcePosX + (fixedSourcePosY * p_SourceImagePixelWidth)) * 3,
+				((fixedSourcePosX + 1) + (fixedSourcePosY * p_SourceImagePixelWidth)) * 3,
+				(fixedSourcePosX + ((fixedSourcePosY + 1)* p_SourceImagePixelWidth)) * 3,
+				((fixedSourcePosX + 1) + ((fixedSourcePosY + 1) * p_SourceImagePixelWidth)) * 3
+			};
+
+			kir_u8 texelData[4][3] = {
+				{
+					p_SourceImageData[destPixelIndices[0] + 0], 
+					p_SourceImageData[destPixelIndices[0] + 1], 
+					p_SourceImageData[destPixelIndices[0] + 2]
+				},
+
+				{
+					p_SourceImageData[destPixelIndices[1] + 0], 
+					p_SourceImageData[destPixelIndices[1] + 1], 
+					p_SourceImageData[destPixelIndices[1] + 2]
+				},
+
+				{
+					p_SourceImageData[destPixelIndices[2] + 0], 
+					p_SourceImageData[destPixelIndices[2] + 1], 
+					p_SourceImageData[destPixelIndices[2] + 2]
+				},
+
+				{
+					p_SourceImageData[destPixelIndices[3] + 0], 
+					p_SourceImageData[destPixelIndices[3] + 1], 
+					p_SourceImageData[destPixelIndices[3] + 2]
+				},
+			};
+
+			kir_u8 verticalSamples[2][3] = {
+				{
+					_K15_IRLerpU8(fractSourcePosX, texelData[0][0], texelData[1][0]),
+					_K15_IRLerpU8(fractSourcePosX, texelData[0][1], texelData[1][1]),
+					_K15_IRLerpU8(fractSourcePosX, texelData[0][2], texelData[1][2])
+				},
+
+				{
+					_K15_IRLerpU8(fractSourcePosX, texelData[2][0], texelData[3][0]),
+					_K15_IRLerpU8(fractSourcePosX, texelData[2][1], texelData[3][1]),
+					_K15_IRLerpU8(fractSourcePosX, texelData[2][2], texelData[3][2])
+				}
+			};
+
+			kir_u8 sample[3] = {
+				_K15_IRLerpU8(fractSourcePosY, verticalSamples[0][0], verticalSamples[1][0]),
+				_K15_IRLerpU8(fractSourcePosY, verticalSamples[0][1], verticalSamples[1][1]),
+				_K15_IRLerpU8(fractSourcePosY, verticalSamples[0][2], verticalSamples[1][2])
+			};
+
+			p_DestinationImageData[pixelIndex * 3 + 0] = sample[0];
+			p_DestinationImageData[pixelIndex * 3 + 1] = sample[1];
+			p_DestinationImageData[pixelIndex * 3 + 2] = sample[2];
+		}
+
+		posX = 0;
 	}
 
 	return K15_IR_RESULT_SUCCESS;
@@ -148,20 +225,20 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 
 	kir_result result = K15_IR_RESULT_SUCCESS;
 
-	if (sourceImageArea > destinationImageArea)
+	//if (sourceImageArea > destinationImageArea)
 	{
 		result = _K15_IRDownscaleImageData(p_SourceImageData, p_SourceImagePixelWidth,
 			p_SourceImagePixelHeight, p_SourceImageDataPixelFormat, p_DestinationImageData,
 			p_DestinationImagePixelWidth, p_DestinationImagePixelHeight, 
 			p_DestinationImageDataPixelFormat);
 	}
-	else if (sourceImageArea < destinationImageArea)
-	{
-		result = _K15_IRUpscaleImageData(p_SourceImageData, p_SourceImagePixelWidth,
-			p_SourceImagePixelHeight, p_SourceImageDataPixelFormat, p_DestinationImageData,
-			p_DestinationImagePixelWidth, p_DestinationImagePixelHeight, 
-			p_DestinationImageDataPixelFormat);
-	}
+// 	else if (sourceImageArea < destinationImageArea)
+// 	{
+// 		result = _K15_IRUpscaleImageData(p_SourceImageData, p_SourceImagePixelWidth,
+// 			p_SourceImagePixelHeight, p_SourceImageDataPixelFormat, p_DestinationImageData,
+// 			p_DestinationImagePixelWidth, p_DestinationImagePixelHeight, 
+// 			p_DestinationImageDataPixelFormat);
+// 	}
 
 	return result;
 }
