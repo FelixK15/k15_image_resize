@@ -97,6 +97,11 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 # define K15_IR_MEMMOVE memmove
 #endif //K15_IA_MEMMOVE
 
+#ifndef K15_IR_CEIL
+# include <math.h>
+# define K15_IR_CEIL ceil
+#endif //K15_IR_CEIL
+
 #ifndef K15_IR_MIN
 # define K15_IR_MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif //K15_IA_MIN
@@ -109,12 +114,119 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 # define kir_internal static
 #endif //kia_internal
 
+typedef struct 
+{
+	kir_u8 r;
+	kir_u8 g;
+	kir_u8 b;
+} kir_rgb_pixel;
+
 kir_internal kir_u8 _K15_IRLerpU8(float p_Factor, kir_u8 p_StartValue, kir_u8 p_EndValue)
 {
 	return (kir_u8)((float)p_StartValue * (1.f - p_Factor) + ((float)p_EndValue * p_Factor));
 }
 
+kir_internal void _K15_IRGetSampleRange(float p_PosX, float p_PosY, kir_u32 p_Stride, float p_NumSamples, kir_u32* p_StartSample, kir_u32* p_EndSample)
+{
+	p_PosX += 0.5f;
+	p_PosY += 0.5f;
+
+	kir_u32 fixedPosX = (kir_u32)p_PosX;
+	kir_u32 fixedPosY = (kir_u32)p_PosY;
+
+	float fractPosX =  p_PosX - (float)fixedPosX;
+	float fractPosY =  p_PosY - (float)fixedPosY;
+
+	kir_u32 pixelIndex = (fixedPosX + (fixedPosY * p_Stride));
+
+	*p_StartSample = fractPosX < 0.5f ? pixelIndex - 1 : pixelIndex;
+	*p_EndSample = (kir_u32)(p_PosX + p_NumSamples);
+}
+
+kir_internal void _K15_IRReadRGBPixelFromIndex(kir_u32 p_PixelIndex, kir_u8* p_ImageData, kir_rgb_pixel* p_PixelOut)
+{
+	p_PixelOut->r = p_ImageData[p_PixelIndex * 3 + 0];
+	p_PixelOut->g = p_ImageData[p_PixelIndex * 3 + 1];
+	p_PixelOut->b = p_ImageData[p_PixelIndex * 3 + 2];
+}
+
+kir_internal void _K15_IRWriteRGBPixelToIndex(kir_u32 p_PixelIndex, kir_u8* p_ImageData, kir_rgb_pixel* p_Pixel)
+{
+	p_ImageData[p_PixelIndex * 3 + 0] = p_Pixel->r;
+	p_ImageData[p_PixelIndex * 3 + 1] = p_Pixel->g;
+	p_ImageData[p_PixelIndex * 3 + 2] = p_Pixel->b;
+}
+
 kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth,
+	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
+{
+	float horizontalRatio = (float)p_SourceImagePixelWidth / (float)p_DestinationImagePixelWidth;
+	int numHorizontalSamplesPerPixel = (kir_u32)K15_IR_CEIL(horizontalRatio);
+
+	float posX = 0.f;
+	float posY = 0.f;
+
+	int pX = 0;
+	int pY = 0;
+
+	kir_u32 pixelIndex = 0;
+	kir_u32 sampleStartIndex = 0;
+	kir_u32 sampleEndIndex = 0;
+
+	for (; pixelIndex < p_DestinationImagePixelWidth; ++pixelIndex)
+	{
+		kir_rgb_pixel pixel = { 0 };
+		kir_rgb_pixel filteredSamplePixel = { 0 };
+
+		kir_u32 fixedPosX = (kir_u32)posX;
+		kir_u32 fixedPosY = (kir_u32)posY;
+
+		float fractPosX =  posX - (float)fixedPosX;
+		float fractPosY =  posY - (float)fixedPosY;
+
+		kir_u32 sampleReadIndex = 0;
+		kir_u32 sampleWriteIndex = 0;
+
+		_K15_IRGetSampleRange(posX, posY, p_SourceImagePixelWidth, 
+			horizontalRatio, &sampleStartIndex, &sampleEndIndex);
+
+		float sampleFrequency = horizontalRatio;
+		for (; sampleReadIndex < (sampleEndIndex - sampleStartIndex); ++sampleReadIndex)
+		{
+			_K15_IRReadRGBPixelFromIndex(sampleReadIndex + sampleStartIndex, p_SourceImageData, &pixel);
+
+			float samplePos = (fractPosX + 0.5f) / 0.5f;
+			samplePos = K15_IR_MIN(1.f, sampleFrequency);
+
+			sampleFrequency -= samplePos;
+
+			filteredSamplePixel.r += (kir_u8)(((float)pixel.r * samplePos) / numHorizontalSamplesPerPixel);
+			filteredSamplePixel.g += (kir_u8)(((float)pixel.g * samplePos) / numHorizontalSamplesPerPixel);
+			filteredSamplePixel.b += (kir_u8)(((float)pixel.b * samplePos) / numHorizontalSamplesPerPixel);
+		}
+
+		sampleWriteIndex = (pX + (pY * p_DestinationImagePixelWidth));
+
+		_K15_IRWriteRGBPixelToIndex(sampleWriteIndex, p_DestinationImageData, &filteredSamplePixel);
+
+		posX += horizontalRatio;
+		pX += 1;
+		if (posX >= (float)p_SourceImagePixelWidth)
+		{
+			pX = 0;
+			pY += 1;
+
+			posX = 0.f;
+			posY += 1.f;
+		}
+	}
+
+	return K15_IR_RESULT_SUCCESS;
+}
+
+kir_internal kir_result _K15_IRUpscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
 	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
 	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
@@ -196,6 +308,10 @@ kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir
 				_K15_IRLerpU8(fractSourcePosY, verticalSamples[0][2], verticalSamples[1][2])
 			};
 
+			// p_DestinationImageData[pixelIndex * 3 + 0] = sample[0];
+			// p_DestinationImageData[pixelIndex * 3 + 1] = sample[1];
+			// p_DestinationImageData[pixelIndex * 3 + 2] = sample[2];
+
 			p_DestinationImageData[pixelIndex * 3 + 0] = sample[0];
 			p_DestinationImageData[pixelIndex * 3 + 1] = sample[1];
 			p_DestinationImageData[pixelIndex * 3 + 2] = sample[2];
@@ -204,14 +320,6 @@ kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir
 		posX = 0;
 	}
 
-	return K15_IR_RESULT_SUCCESS;
-}
-
-kir_internal kir_result _K15_IRUpscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
-	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
-	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
-{
 	return K15_IR_RESULT_SUCCESS;
 }
 

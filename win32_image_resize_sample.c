@@ -218,11 +218,11 @@ void setup(HWND p_HWND)
 	sourceImageData = stbi_load("image.png", &sourceImageWidth, &sourceImageHeight, 
 		&sourceImageColorComponents, 0);
 
-	destinationImageWidth = 8;
-	destinationImageHeight = 8;
-
 	// destinationImageWidth = sourceImageWidth / 2;
 	// destinationImageHeight = sourceImageHeight / 2;
+
+	destinationImageWidth = 2;
+	destinationImageHeight = 2;
 
 	destinationImageData = (unsigned char*)malloc(destinationImageHeight * destinationImageWidth * sourceImageColorComponents);
 
