@@ -2,13 +2,21 @@
 echo Searching for Visual Studio installation...
 setlocal enableextensions enabledelayedexpansion
 
+del k15_resize*.pdb
+
 set PROJECT_NAME=win32_image_resize_sample
 set C_FILE_NAME=win32_image_resize_sample.c
 
-set COMPILER_OPTIONS=/nologo /Od /TC /MTd /W3 /Od /Gm- /Z7 /Fe!PROJECT_NAME!.exe
+set DLL_NAME=k15_resize
+
+set DLL_COMPILER_OPTIONS=/nologo /Od /TC /MTd /W3 /Gm- /Z7 /Fe!DLL_NAME!.dll /DRESIZE_DLL
+set DLL_LINKER_OTPIONS=/PDB:!DLL_NAME!_%TIME:~0,2%_%TIME:~3,2%_%TIME:~6,2%.pdb /DLL /EXPORT:resizeFunction
+
+set COMPILER_OPTIONS=/nologo /Od /TC /MTd /W3 /Gm- /Z7 /Fe!PROJECT_NAME!.exe
 set LINKER_OPTIONS=/PDB:!PROJECT_NAME!.pdb
 
 set CL_OPTIONS=!COMPILER_OPTIONS! /link !LINKER_OPTIONS!
+set DLL_CL_OPTIONS=!DLL_COMPILER_OPTIONS! /link !DLL_LINKER_OTPIONS!
 
 set FOUND_PATH=0
 set VS_PATH=
@@ -51,6 +59,8 @@ IF !FOUND_PATH!==0 (
 	set VCVARS_PATH="!VS_PATH!..\..\VC\vcvarsall.bat"
 	set CL_PATH="!VS_PATH!..\..\VC\bin\cl.exe"
 	set BUILD_COMMAND=!CL_PATH! !C_FILE_NAME! !CL_OPTIONS!
+	set DLL_BUILD_COMMAND=!CL_PATH! !C_FILE_NAME! !DLL_CL_OPTIONS!
 	call !VCVARS_PATH!
 	call !BUILD_COMMAND!
+	call !DLL_BUILD_COMMAND!
 ) 
