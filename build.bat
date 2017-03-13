@@ -2,15 +2,13 @@
 echo Searching for Visual Studio installation...
 setlocal enableextensions enabledelayedexpansion
 
-del k15_resize*.pdb
-
 set PROJECT_NAME=win32_image_resize_sample
 set C_FILE_NAME=win32_image_resize_sample.c
 
 set DLL_NAME=k15_resize
 
 set DLL_COMPILER_OPTIONS=/nologo /Od /TC /MTd /W3 /Gm- /Z7 /Fe!DLL_NAME!.dll /DRESIZE_DLL
-set DLL_LINKER_OTPIONS=/PDB:!DLL_NAME!_%TIME:~0,2%_%TIME:~3,2%_%TIME:~6,2%.pdb /DLL /EXPORT:resizeFunction
+set DLL_LINKER_OTPIONS=/PDB:!DLL_NAME!_%TIME:~3,2%_%TIME:~6,2%.pdb /DLL /EXPORT:resizeFunction
 
 set COMPILER_OPTIONS=/nologo /Od /TC /MTd /W3 /Gm- /Z7 /Fe!PROJECT_NAME!.exe
 set LINKER_OPTIONS=/PDB:!PROJECT_NAME!.pdb

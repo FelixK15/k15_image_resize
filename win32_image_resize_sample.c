@@ -76,8 +76,8 @@ void resizeImage()
 
 		if (resizeFunction)
 		{
-			destinationImageWidth = 2;
-			destinationImageHeight = 3;
+			destinationImageWidth = sourceImageWidth / 2;
+			destinationImageHeight = sourceImageHeight / 2;
 
 			if (destinationImageData)
 			{
@@ -151,7 +151,10 @@ void K15_KeyInput(HWND p_HWND, UINT p_Message, WPARAM p_wParam, LPARAM p_lParam)
 
 void K15_MouseButtonInput(HWND p_HWND, UINT p_Message, WPARAM p_wParam, LPARAM p_lParam)
 {
-
+	if (p_Message == WM_MBUTTONDOWN)
+	{
+		resizeImage();
+	}
 }
 
 void K15_MouseMove(HWND p_HWND, UINT p_Message, WPARAM p_wParam, LPARAM p_lParam)
@@ -280,12 +283,14 @@ void setup(HWND p_HWND)
 	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
-	sourceImageData = stbi_load("image.png", &sourceImageWidth, &sourceImageHeight, 
+	sourceImageData = stbi_load("image2.png", &sourceImageWidth, &sourceImageHeight, 
 		&sourceImageColorComponents, 0);
 
 	free(sourceImageDataBGR);
 	sourceImageDataBGR = convertToBGR(sourceImageData, 
 		sourceImageWidth, sourceImageHeight);
+
+	resizeImage();
 }
 
 void swapBuffers(HWND p_HWND)
@@ -317,7 +322,7 @@ void drawDeltaTime(uint32 p_DeltaTimeInMS)
 
 void drawImages(HWND p_HWND)
 {
-	int scaleFactor = 20;
+	int scaleFactor = 1;
 
 	int posX1 = 40;
 	int posY1 = 40;
@@ -342,7 +347,7 @@ void drawImages(HWND p_HWND)
 		BITMAPINFO destinationImageInfo = {0};
 		destinationImageInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 		destinationImageInfo.bmiHeader.biWidth = destinationImageWidth;
-		destinationImageInfo.bmiHeader.biHeight = destinationImageHeight;
+		destinationImageInfo.bmiHeader.biHeight = destinationImageHeight * -1;
 		destinationImageInfo.bmiHeader.biPlanes = 1;
 		destinationImageInfo.bmiHeader.biBitCount = 32;
 

@@ -157,84 +157,95 @@ kir_internal void _K15_IRWriteRGBPixelToIndex(kir_u32 p_PixelIndex, kir_u8* p_Im
 	p_ImageData[p_PixelIndex * 3 + 2] = p_Pixel->b;
 }
 
+kir_internal void _K15_IRDownscaleImageDataLine(kir_u8* p_SourceImageData, kir_u32 p_SourceImageDataStride,
+	kir_pixel_format p_SourceImageDataPixelFormat, kir_u8* p_DestinationImageData, 
+	kir_u32 p_DestinationImageDataStride, kir_pixel_format p_DestinationImageDataPixelFormat,
+	kir_u32 p_LinePosY)
+{
+
+}
+
 kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth,
 	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
 	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
 	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
-	kir_u32 numVerticalSamplesPerPixel = (kir_u32)K15_IR_CEIL((float)p_SourceImagePixelWidth / (float)p_DestinationImagePixelWidth);
-	kir_u32 numHorizontalSamplesPerPixel = (kir_u32)K15_IR_CEIL((float)p_SourceImagePixelHeight / (float)p_DestinationImagePixelHeight);
+	float numVSamples = (float)p_SourceImagePixelHeight / (float)p_DestinationImagePixelHeight;
+	float numHSamples = (float)p_SourceImagePixelWidth / (float)p_DestinationImagePixelWidth;
 
-	kir_u32 pixelIndex = 0;
-	kir_u32 sampleStartIndex = 0;
-	kir_u32 sampleEndIndex = 0;
+	kir_u32 numVIndexSamples = (kir_u32)K15_IR_CEIL(numVSamples);
+	kir_u32 numHIndexSamples = (kir_u32)K15_IR_CEIL(numHSamples);
 
-	kir_u32 numDestinationPixels = p_DestinationImagePixelHeight * p_DestinationImagePixelWidth;
-	kir_u32 samplesPerPixel = numVerticalSamplesPerPixel + numHorizontalSamplesPerPixel;
-
-	float maxHorizontalWeight = 1.f;
-	float maxVerticalWeight = 1.f;
+	kir_u32	numVBitSamples = (kir_u32)(numVSamples * 255.f);
+	kir_u32 numHBitSamples = (kir_u32)(numHSamples * 255.f);
 	
-	kir_u32 sampleIndex = 0;
-	kir_u32 horizontalSampleIndex = 0;
-	kir_u32 verticalSampleIndex = 0;
-	kir_u32 samplePixelIndex = 0;
-	kir_rgb_pixel samplePixel = { 0 };
+	kir_u32 bitCounter = 255;
 
-	int posX = 0;
-	int posY = 0;
+	kir_rgb_pixel samplePixel = {0};
 
-	for (pixelIndex = 0; pixelIndex < numDestinationPixels; ++pixelIndex)
+	kir_u32 dPosX = 0;
+	kir_u32 sPosX = 0;
+	kir_u32 dPosY = 0;
+	kir_u32 sPosY = 0;
+
+	for (dPosY = 0; dPosY < p_DestinationImagePixelHeight; ++dPosY)
 	{
-		kir_rgb_pixel destinationPixel = { 0 };
-		destinationPixel.r = 255;
-		
-		float summedVerticalWeight = (float)p_SourceImagePixelHeight / (float)p_DestinationImagePixelHeight;
-
-		for (verticalSampleIndex = 0; verticalSampleIndex < numVerticalSamplesPerPixel; 
-			++verticalSampleIndex)
+		for (dPosX = 0; dPosX < p_DestinationImagePixelWidth; ++dPosX)
 		{
-			int tempPy = posY + verticalSampleIndex;
-			float verticalWeight = K15_IR_MIN(maxVerticalWeight, summedVerticalWeight);
-			float summedHorizontalWeight = (float)p_SourceImagePixelWidth / (float)p_DestinationImagePixelWidth;
-
-			maxVerticalWeight -= verticalWeight;
-			summedVerticalWeight -= verticalWeight;
-
-			if (maxVerticalWeight <= 0.f)
+			_K15_IRDownscaleImageDataLine(p_SourceImageData, p_SourceImagePixelWidth,
+				p_SourceImageDataPixelFormat, p_DestinationImageData, p_DestinationImageDataStride,
+				p_DestinationImageDataPixelFormat, dPosY);
+			
+			kir_rgb_pixel destinationPixel = {0};
+			kir_u32 dPixelIndex = dPosX + (dPosY * p_DestinationImagePixelWidth);
+			kir_u32 sampleIndex = 0;
+			kir_u32 bitSampleCounter = numHBitSamples;
+			kir_u32 numPixelsFinished = 0;
+			for (sampleIndex = 0; sampleIndex < numHIndexSamples; ++sampleIndex)
 			{
-				maxVerticalWeight = 1.f;
-			}
+				kir_u32 samplePosX = (kir_u32)sPosX + sampleIndex;
 
-			for (horizontalSampleIndex = 0; horizontalSampleIndex < numHorizontalSamplesPerPixel;
-				++horizontalSampleIndex)
-			{
-				int tempPx = posX + horizontalSampleIndex;
-				float horizontalWeight = K15_IR_MIN(1.f, summedHorizontalWeight);
-				horizontalWeight = floorf(horizontalWeight) - horizontalWeight;
-				summedHorizontalWeight -= horizontalWeight;
-
-				if (maxHorizontalWeight <= 0.f)
+				//Clamp
+				if (samplePosX >= p_SourceImagePixelWidth)
 				{
-					maxHorizontalWeight = 1.f;
+					samplePosX = p_SourceImagePixelWidth - 1;
 				}
 
-				samplePixelIndex = tempPx + (tempPy * p_SourceImagePixelWidth);
+				kir_u32 samplePixelIndex = samplePosX + (sPosY * p_SourceImagePixelWidth);
 
+				//Get rgb pixel values and check how much we need to sample from this pixel
 				_K15_IRReadRGBPixelFromIndex(samplePixelIndex, p_SourceImageData, &samplePixel);
 
-				destinationPixel.r = (kir_u8)((samplePixel.r * horizontalWeight * verticalWeight) / samplesPerPixel);
-				destinationPixel.g = (kir_u8)((samplePixel.g * horizontalWeight * verticalWeight) / samplesPerPixel);
-				destinationPixel.b = (kir_u8)((samplePixel.b * horizontalWeight * verticalWeight) / samplesPerPixel);
+				kir_u32 numHBitsToSample = K15_IR_MIN(bitCounter, bitSampleCounter);
+				bitSampleCounter -= numHBitsToSample;
+				bitCounter -= numHBitsToSample;
+
+				if (bitCounter == 0)
+				{
+					bitCounter = 255;
+					numPixelsFinished += 1;
+				}
+
+				float sampleWeight = ((float)bitCounter / 255.f) / numHIndexSamples;
+				destinationPixel.r += (kir_u8)((float)samplePixel.r * sampleWeight);
+				destinationPixel.g += (kir_u8)((float)samplePixel.g * sampleWeight);
+				destinationPixel.b += (kir_u8)((float)samplePixel.b * sampleWeight);
 			}
+
+			sPosX += numPixelsFinished;
+
+			if ((sPosX + 1) >= p_SourceImagePixelWidth)
+			{
+				sPosX = 0;
+				sPosY += 1;
+			}
+
+			_K15_IRWriteRGBPixelToIndex(dPixelIndex, p_DestinationImageData, &destinationPixel);
 		}
 
-		int writePixelindex = posX + (posY * p_SourceImagePixelWidth);
-		_K15_IRWriteRGBPixelToIndex(writePixelindex, p_DestinationImageData, &destinationPixel);
-
-		posX += numHorizontalSamplesPerPixel;
-		posY += numVerticalSamplesPerPixel;
+		dPosX = 0;
 	}
+
 
 	return K15_IR_RESULT_SUCCESS;
 }
