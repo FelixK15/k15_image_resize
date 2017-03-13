@@ -2,4 +2,7 @@
 *.ilk
 *.obj
 *.pdb
+*.dll
+*.exp
+*.lib
 .vs
