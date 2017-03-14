@@ -116,9 +116,9 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 
 typedef struct 
 {
-	kir_u8 r;
-	kir_u8 g;
-	kir_u8 b;
+	kir_u16 r;
+	kir_u16 g;
+	kir_u16 b;
 } kir_rgb_pixel;
 
 kir_internal kir_u8 _K15_IRLerpU8(float p_Factor, kir_u8 p_StartValue, kir_u8 p_EndValue)
@@ -148,7 +148,7 @@ kir_internal void _K15_IRReadRGBPixelFromIndex(kir_u32 p_PixelIndex, kir_u8* p_I
 	p_PixelOut->r = p_ImageData[p_PixelIndex * 3 + 0];
 	p_PixelOut->g = p_ImageData[p_PixelIndex * 3 + 1];
 	p_PixelOut->b = p_ImageData[p_PixelIndex * 3 + 2];
-}
+}a
 
 kir_internal void _K15_IRWriteRGBPixelToIndex(kir_u32 p_PixelIndex, kir_u8* p_ImageData, kir_rgb_pixel* p_Pixel)
 {
@@ -173,79 +173,74 @@ kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir
 	float numVSamples = (float)p_SourceImagePixelHeight / (float)p_DestinationImagePixelHeight;
 	float numHSamples = (float)p_SourceImagePixelWidth / (float)p_DestinationImagePixelWidth;
 
-	kir_u32 numVIndexSamples = (kir_u32)K15_IR_CEIL(numVSamples);
-	kir_u32 numHIndexSamples = (kir_u32)K15_IR_CEIL(numHSamples);
-
 	kir_u32	numVBitSamples = (kir_u32)(numVSamples * 255.f);
 	kir_u32 numHBitSamples = (kir_u32)(numHSamples * 255.f);
 	
-	kir_u32 bitCounter = 255;
+	kir_u32 bitSampleCounter = 0;
+	kir_u32 bitSampleThreshold = 255;
+	kir_u32 numSamples = 0;
 
 	kir_rgb_pixel samplePixel = {0};
+	kir_rgb_pixel destinationPixel = {0};
 
-	kir_u32 dPosX = 0;
 	kir_u32 sPosX = 0;
-	kir_u32 dPosY = 0;
 	kir_u32 sPosY = 0;
 
-	for (dPosY = 0; dPosY < p_DestinationImagePixelHeight; ++dPosY)
+	kir_u32 dPosX = 0;
+	kir_u32 dPosY = 0;
+
+	for (;;)
 	{
-		for (dPosX = 0; dPosX < p_DestinationImagePixelWidth; ++dPosX)
+		kir_u32 bitsToSample = K15_IR_MIN(bitSampleThreshold, numHBitSamples);
+		bitSampleThreshold -= bitsToSample;
+		bitSampleCounter += bitsToSample;
+		++numSamples;
+
+		float sampleWeight = ((float)bitsToSample / 255.f);
+		kir_u32 pixelIndex = sPosY + (sPosY * p_SourceImagePixelWidth);
+
+		_K15_IRReadRGBPixelFromIndex(pixelIndex, p_SourceImageData, &samplePixel);
+		destinationPixel.r += (kir_u16)((float)samplePixel.r * sampleWeight);
+		destinationPixel.g += (kir_u16)((float)samplePixel.g * sampleWeight);
+		destinationPixel.b += (kir_u16)((float)samplePixel.b * sampleWeight);
+
+		if (bitSampleCounter == numHBitSamples)
 		{
-			_K15_IRDownscaleImageDataLine(p_SourceImageData, p_SourceImagePixelWidth,
-				p_SourceImageDataPixelFormat, p_DestinationImageData, p_DestinationImageDataStride,
-				p_DestinationImageDataPixelFormat, dPosY);
-			
-			kir_rgb_pixel destinationPixel = {0};
-			kir_u32 dPixelIndex = dPosX + (dPosY * p_DestinationImagePixelWidth);
-			kir_u32 sampleIndex = 0;
-			kir_u32 bitSampleCounter = numHBitSamples;
-			kir_u32 numPixelsFinished = 0;
-			for (sampleIndex = 0; sampleIndex < numHIndexSamples; ++sampleIndex)
-			{
-				kir_u32 samplePosX = (kir_u32)sPosX + sampleIndex;
+			break;
+		}
+		else if (bitSampleThreshold == 0)
+		{
+			bitSampleThreshold = 255;
+			++sPosX;
 
-				//Clamp
-				if (samplePosX >= p_SourceImagePixelWidth)
-				{
-					samplePosX = p_SourceImagePixelWidth - 1;
-				}
-
-				kir_u32 samplePixelIndex = samplePosX + (sPosY * p_SourceImagePixelWidth);
-
-				//Get rgb pixel values and check how much we need to sample from this pixel
-				_K15_IRReadRGBPixelFromIndex(samplePixelIndex, p_SourceImageData, &samplePixel);
-
-				kir_u32 numHBitsToSample = K15_IR_MIN(bitCounter, bitSampleCounter);
-				bitSampleCounter -= numHBitsToSample;
-				bitCounter -= numHBitsToSample;
-
-				if (bitCounter == 0)
-				{
-					bitCounter = 255;
-					numPixelsFinished += 1;
-				}
-
-				float sampleWeight = ((float)bitCounter / 255.f) / numHIndexSamples;
-				destinationPixel.r += (kir_u8)((float)samplePixel.r * sampleWeight);
-				destinationPixel.g += (kir_u8)((float)samplePixel.g * sampleWeight);
-				destinationPixel.b += (kir_u8)((float)samplePixel.b * sampleWeight);
-			}
-
-			sPosX += numPixelsFinished;
-
-			if ((sPosX + 1) >= p_SourceImagePixelWidth)
+			if (sPosX >= (p_SourceImagePixelWidth - 1))
 			{
 				sPosX = 0;
-				sPosY += 1;
+				++sPosY;
 			}
-
-			_K15_IRWriteRGBPixelToIndex(dPixelIndex, p_DestinationImageData, &destinationPixel);
 		}
-
-		dPosX = 0;
 	}
 
+	destinationPixel.r /= numSamples;
+	destinationPixel.g /= numSamples;
+	destinationPixel.b /= numSamples;
+
+	kir_u32 pixelIndex = dPosX + (dPosY * p_DestinationImagePixelWidth);
+	_K15_IRWriteRGBPixelToIndex(pixelIndex, p_DestinationImageData, &destinationPixel);
+
+	++dPosX;
+	if (dPosX >= (p_DestinationImagePixelWidth - 1))
+	{
+		dPosX = 0;
+		++dPosY;
+	}
+
+	bitSampleThreshold = 255;
+	bitSampleCounter = 0;
+	numSamples = 0;
+	destinationPixel.r = 0;
+	destinationPixel.b = 0;
+	destinationPixel.g = 0;
 
 	return K15_IR_RESULT_SUCCESS;
 }
