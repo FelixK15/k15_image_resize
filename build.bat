@@ -2,6 +2,8 @@
 echo Searching for Visual Studio installation...
 setlocal enableextensions enabledelayedexpansion
 
+del k15_resize_*.pdb
+
 set PROJECT_NAME=win32_image_resize_sample
 set C_FILE_NAME=win32_image_resize_sample.c
 

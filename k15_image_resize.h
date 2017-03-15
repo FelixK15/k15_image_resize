@@ -148,13 +148,13 @@ kir_internal void _K15_IRReadRGBPixelFromIndex(kir_u32 p_PixelIndex, kir_u8* p_I
 	p_PixelOut->r = p_ImageData[p_PixelIndex * 3 + 0];
 	p_PixelOut->g = p_ImageData[p_PixelIndex * 3 + 1];
 	p_PixelOut->b = p_ImageData[p_PixelIndex * 3 + 2];
-}a
+}
 
 kir_internal void _K15_IRWriteRGBPixelToIndex(kir_u32 p_PixelIndex, kir_u8* p_ImageData, kir_rgb_pixel* p_Pixel)
 {
-	p_ImageData[p_PixelIndex * 3 + 0] = p_Pixel->r;
-	p_ImageData[p_PixelIndex * 3 + 1] = p_Pixel->g;
-	p_ImageData[p_PixelIndex * 3 + 2] = p_Pixel->b;
+	p_ImageData[p_PixelIndex * 3 + 0] = (kir_u8)p_Pixel->r;
+	p_ImageData[p_PixelIndex * 3 + 1] = (kir_u8)p_Pixel->g;
+	p_ImageData[p_PixelIndex * 3 + 2] = (kir_u8)p_Pixel->b;
 }
 
 kir_internal void _K15_IRDownscaleImageDataLine(kir_u8* p_SourceImageData, kir_u32 p_SourceImageDataStride,
@@ -170,6 +170,8 @@ kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir
 	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
 	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
+	kir_u8* squishedBuffer = (kir_u8*)malloc(p_DestinationImagePixelWidth * p_SourceImagePixelHeight * p_DestinationImageDataPixelFormat);
+
 	float numVSamples = (float)p_SourceImagePixelHeight / (float)p_DestinationImagePixelHeight;
 	float numHSamples = (float)p_SourceImagePixelWidth / (float)p_DestinationImagePixelWidth;
 
@@ -178,6 +180,7 @@ kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir
 	
 	kir_u32 bitSampleCounter = 0;
 	kir_u32 bitSampleThreshold = 255;
+	kir_u32 maxBitsPerSample = 255;
 	kir_u32 numSamples = 0;
 
 	kir_rgb_pixel samplePixel = {0};
@@ -191,56 +194,130 @@ kir_internal kir_result _K15_IRDownscaleImageData(kir_u8* p_SourceImageData, kir
 
 	for (;;)
 	{
-		kir_u32 bitsToSample = K15_IR_MIN(bitSampleThreshold, numHBitSamples);
-		bitSampleThreshold -= bitsToSample;
-		bitSampleCounter += bitsToSample;
-		++numSamples;
-
-		float sampleWeight = ((float)bitsToSample / 255.f);
-		kir_u32 pixelIndex = sPosY + (sPosY * p_SourceImagePixelWidth);
-
-		_K15_IRReadRGBPixelFromIndex(pixelIndex, p_SourceImageData, &samplePixel);
-		destinationPixel.r += (kir_u16)((float)samplePixel.r * sampleWeight);
-		destinationPixel.g += (kir_u16)((float)samplePixel.g * sampleWeight);
-		destinationPixel.b += (kir_u16)((float)samplePixel.b * sampleWeight);
-
-		if (bitSampleCounter == numHBitSamples)
+		for (;;)
 		{
-			break;
-		}
-		else if (bitSampleThreshold == 0)
-		{
-			bitSampleThreshold = 255;
-			++sPosX;
+			kir_u32 bitsToSample = K15_IR_MIN(bitSampleThreshold, numHBitSamples);
+			bitSampleThreshold -= bitsToSample;
+			bitSampleCounter += bitsToSample;
+			++numSamples;
 
-			if (sPosX >= (p_SourceImagePixelWidth - 1))
+			float sampleWeight = ((float)bitsToSample / 255.f);
+			kir_u32 pixelIndex = sPosX + (sPosY * p_SourceImagePixelWidth);
+
+			_K15_IRReadRGBPixelFromIndex(pixelIndex, p_SourceImageData, &samplePixel);
+			destinationPixel.r += (kir_u16)((float)samplePixel.r * sampleWeight);
+			destinationPixel.g += (kir_u16)((float)samplePixel.g * sampleWeight);
+			destinationPixel.b += (kir_u16)((float)samplePixel.b * sampleWeight);
+
+			if (bitSampleThreshold == 0)
 			{
-				sPosX = 0;
-				++sPosY;
+				bitSampleThreshold = 255;
+				++sPosX;
+
+				if (sPosX >= p_SourceImagePixelWidth)
+				{
+					sPosX = 0;
+					++sPosY;
+				}
 			}
+
+			if (bitSampleCounter == numHBitSamples)
+				break;
 		}
+
+		destinationPixel.r /= numSamples;
+		destinationPixel.g /= numSamples;
+		destinationPixel.b /= numSamples;
+
+		kir_u32 pixelIndex = dPosX + (dPosY * p_DestinationImagePixelWidth);
+		_K15_IRWriteRGBPixelToIndex(pixelIndex, squishedBuffer, &destinationPixel);
+
+		++dPosX;
+		if (dPosX >= p_DestinationImagePixelWidth)
+		{
+			dPosX = 0;
+			++dPosY;
+		}
+
+		if (dPosY >= p_SourceImagePixelWidth)
+			break;
+
+		bitSampleThreshold = 255;
+		bitSampleCounter = 0;
+		numSamples = 0;
+		destinationPixel.r = 0;
+		destinationPixel.b = 0;
+		destinationPixel.g = 0;
 	}
 
-	destinationPixel.r /= numSamples;
-	destinationPixel.g /= numSamples;
-	destinationPixel.b /= numSamples;
-
-	kir_u32 pixelIndex = dPosX + (dPosY * p_DestinationImagePixelWidth);
-	_K15_IRWriteRGBPixelToIndex(pixelIndex, p_DestinationImageData, &destinationPixel);
-
-	++dPosX;
-	if (dPosX >= (p_DestinationImagePixelWidth - 1))
-	{
-		dPosX = 0;
-		++dPosY;
-	}
-
+	sPosX = 0;
+	sPosY = 0;
+	dPosX = 0;
+	dPosY = 0;
 	bitSampleThreshold = 255;
 	bitSampleCounter = 0;
 	numSamples = 0;
 	destinationPixel.r = 0;
 	destinationPixel.b = 0;
 	destinationPixel.g = 0;
+
+	for (;;)
+	{
+		for (;;)
+		{
+			kir_u32 bitsToSample = K15_IR_MIN(bitSampleThreshold, numVBitSamples);
+			bitSampleThreshold -= bitsToSample;
+			bitSampleCounter += bitsToSample;
+			++numSamples;
+
+			float sampleWeight = ((float)bitsToSample / 255.f);
+			kir_u32 pixelIndex = sPosX + (sPosY * p_DestinationImagePixelWidth);
+
+			_K15_IRReadRGBPixelFromIndex(pixelIndex, squishedBuffer, &samplePixel);
+			destinationPixel.r += (kir_u16)((float)samplePixel.r * sampleWeight);
+			destinationPixel.g += (kir_u16)((float)samplePixel.g * sampleWeight);
+			destinationPixel.b += (kir_u16)((float)samplePixel.b * sampleWeight);
+
+			if (bitSampleThreshold == 0)
+			{
+				bitSampleThreshold = 255;
+				++sPosY;
+
+				if (sPosY >= p_SourceImagePixelHeight)
+				{
+					sPosY = 0;
+					++sPosX;
+				}
+			}
+
+			if (bitSampleCounter == numVBitSamples)
+				break;
+		}
+
+		destinationPixel.r /= numSamples;
+		destinationPixel.g /= numSamples;
+		destinationPixel.b /= numSamples;
+
+		kir_u32 pixelIndex = dPosX + (dPosY * p_DestinationImagePixelWidth);
+		_K15_IRWriteRGBPixelToIndex(pixelIndex, p_DestinationImageData, &destinationPixel);
+
+		++dPosY;
+		if (dPosY >= p_DestinationImagePixelHeight)
+		{
+			dPosY = 0;
+			++dPosX;
+		}
+
+		if (dPosX >= p_DestinationImagePixelWidth)
+			break;
+
+		bitSampleThreshold = 255;
+		bitSampleCounter = 0;
+		numSamples = 0;
+		destinationPixel.r = 0;
+		destinationPixel.b = 0;
+		destinationPixel.g = 0;
+	}
 
 	return K15_IR_RESULT_SUCCESS;
 }

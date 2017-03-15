@@ -79,6 +79,10 @@ void resizeImage()
 			destinationImageWidth = sourceImageWidth / 2;
 			destinationImageHeight = sourceImageHeight / 2;
 
+			// destinationImageWidth = 350;
+			// destinationImageHeight = 200;
+
+
 			if (destinationImageData)
 			{
 				free(destinationImageData);
