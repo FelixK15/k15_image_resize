@@ -21,6 +21,9 @@ typedef unsigned char uint8;
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 typedef LRESULT(CALLBACK* WNDPROC)(HWND, UINT, WPARAM, LPARAM);
 
 HDC backbufferDC = 0;
@@ -29,10 +32,10 @@ uint32 screenWidth = 1024;
 uint32 screenHeight = 768;
 uint32 timePerFrameInMS = 16;
 
-uint32 sourceImageWidth = 0;
-uint32 sourceImageHeight = 0;
-uint32 destinationImageWidth = 0;
-uint32 destinationImageHeight = 0;
+int sourceImageWidth = 0;
+int sourceImageHeight = 0;
+int destinationImageWidth = 0;
+int destinationImageHeight = 0;
 unsigned char* sourceImageData = 0;
 unsigned char* sourceImageDataBGR = 0;
 unsigned char* destinationImageData = 0;
@@ -76,11 +79,11 @@ void resizeImage()
 
 		if (resizeFunction)
 		{
-			destinationImageWidth = sourceImageWidth / 2;
-			destinationImageHeight = sourceImageHeight / 2;
+ 			destinationImageWidth = sourceImageWidth / 2;
+ 			destinationImageHeight = sourceImageHeight / 2;
 
-			// destinationImageWidth = 350;
-			// destinationImageHeight = 200;
+//			 destinationImageWidth = 350;
+//			 destinationImageHeight = 200;
 
 
 			if (destinationImageData)
@@ -92,9 +95,12 @@ void resizeImage()
 			destinationImageData = (unsigned char*)malloc(destinationImageHeight * destinationImageWidth * 3);
 
 			resizeFunction(sourceImageData, sourceImageWidth, sourceImageHeight, 
-				3, destinationImageData, destinationImageWidth, 
-				destinationImageHeight, 3);
+				2, destinationImageData, destinationImageWidth, 
+				destinationImageHeight, 2);
 
+     		stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
+     		exit(0);
+     		
 			free(destinationImageDataBGR);
 			destinationImageDataBGR = convertToBGR(destinationImageData, 
 				destinationImageWidth, destinationImageHeight);
@@ -282,9 +288,9 @@ void resizeBackbuffer(HWND p_HWND, uint32 p_Width, uint32 p_Height)
 
 void setup(HWND p_HWND)
 {	
-	HDC originalDC = GetDC(p_HWND);
-	backbufferDC = CreateCompatibleDC(originalDC);
-	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
+	// HDC originalDC = GetDC(p_HWND);
+	// backbufferDC = CreateCompatibleDC(originalDC);
+	// resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
 	sourceImageData = stbi_load("image2.png", &sourceImageWidth, &sourceImageHeight, 
@@ -399,10 +405,14 @@ int CALLBACK WinMain(HINSTANCE hInstance,
 	LARGE_INTEGER performanceFrequency;
 	QueryPerformanceFrequency(&performanceFrequency);
 
-	HWND hwnd = setupWindow(hInstance, screenWidth, screenHeight);
+	HWND hwnd = (HWND)INVALID_HANDLE_VALUE;
 
-	if (hwnd == INVALID_HANDLE_VALUE)
-		return -1;
+	// HWND hwnd = setupWindow(hInstance, screenWidth, screenHeight);
+
+	// if (hwnd == INVALID_HANDLE_VALUE)
+	// 	return -1;
+
+	// setup(hwnd);
 
 	setup(hwnd);
 
@@ -442,15 +452,16 @@ int CALLBACK WinMain(HINSTANCE hInstance,
 # define K15_IR_IMPLEMENTATION
 # include "k15_image_resize.h"
 
-extern void resizeFunction(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
-	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
-	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
+extern void resizeFunction(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixelWidth, 
+	kir_u16 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
+	kir_u8* p_DestinationImageData, kir_u16 p_DestinationImagePixelWidth,
+	kir_u16 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
 {
 	K15_IRScaleImageData(p_SourceImageData, p_SourceImagePixelWidth, 
 		p_SourceImagePixelHeight, p_SourceImageDataPixelFormat,
 		p_DestinationImageData, p_DestinationImagePixelWidth,
-		p_DestinationImagePixelHeight, p_DestinationImageDataPixelFormat);
+		p_DestinationImagePixelHeight, p_DestinationImageDataPixelFormat,
+		K15_IR_WRAP_CLAMP);
 }
 
 
