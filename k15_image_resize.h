@@ -38,6 +38,10 @@ K15 Image Resize v 1.0
 #ifndef _K15_ImageResize_h_
 #define _K15_ImageResize_h_
 
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #ifndef K15_IR_STATIC
 # define kir_def static
 #else
@@ -74,10 +78,10 @@ typedef enum
 	K15_IR_WRAP_MIRROR
 } kir_wrap_mode;
 
-kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixelWidth, 
-	kir_u16 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8* p_DestinationImageData, kir_u16 p_DestinationImagePixelWidth,
-	kir_u16 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat,
+kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
+	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat,
 	kir_wrap_mode p_WrapMode);
 
 #ifdef K15_IR_IMPLEMENTATION
@@ -171,8 +175,8 @@ typedef enum
 
 typedef struct
 {
-	kir_u16 i1;
-	kir_u16 i2;
+	kir_u32 i1;
+	kir_u32 i2;
 	float t;
 } kir_bilinear_index;
 
@@ -187,10 +191,10 @@ typedef struct
 	kir_pixel_format sourceFormat;
 	kir_pixel_format destinationFormat;
 	kir_wrap_mode wrapMode;
-	kir_u16 sourceWidth;
-	kir_u16 sourceHeight;
-	kir_u16 destinationWidth;
-	kir_u16 destinationHeight;
+	kir_u32 sourceWidth;
+	kir_u32 sourceHeight;
+	kir_u32 destinationWidth;
+	kir_u32 destinationHeight;
 
 } kir_resize_context;
 
@@ -199,26 +203,26 @@ kir_internal kir_u8 _K15_IRLerpU8(float p_Factor, kir_u8 p_StartValue, kir_u8 p_
 	return (kir_u8)((float)p_StartValue * (1.f - p_Factor) + ((float)p_EndValue * p_Factor));
 }
 
-kir_internal void _K15_IRReadPixelFromIndex(kir_u16 p_PixelIndex, kir_pixel_format p_PixelFormat, 
+kir_internal void _K15_IRReadPixelFromIndex(kir_u32 p_PixelIndex, kir_pixel_format p_PixelFormat, 
 	kir_u8* p_Pixels, kir_u8* p_OutputPixels)
 {
 	kir_u32 bpp = kir_format_to_byte_lut[p_PixelFormat];
 	K15_IR_MEMCPY(p_OutputPixels, p_Pixels + p_PixelIndex * bpp, bpp);
 }
 
-kir_internal void _K15_IRWritePixelToIndex(kir_u16 p_PixelIndex, kir_pixel_format p_PixelFormat, 
+kir_internal void _K15_IRWritePixelToIndex(kir_u32 p_PixelIndex, kir_pixel_format p_PixelFormat, 
 	kir_u8* p_Pixels, kir_u8* p_InputPixels)
 {
 	kir_u32 bpp = kir_format_to_byte_lut[p_PixelFormat];
 	K15_IR_MEMCPY(p_Pixels + p_PixelIndex * bpp, p_InputPixels, bpp);
 }
 
-kir_internal void _K15_IRTranscodeFromR8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 255;
@@ -236,12 +240,12 @@ kir_internal void _K15_IRTranscodeFromR8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 
@@ -259,12 +263,12 @@ kir_internal void _K15_IRTranscodeFromR8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* 
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 a = 255;
@@ -284,12 +288,12 @@ kir_internal void _K15_IRTranscodeFromR8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8ToR8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8ToR8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -313,12 +317,12 @@ kir_internal void _K15_IRTranscodeFromR8G8ToR8(kir_u8* p_InputPixels, kir_u8* p_
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -345,12 +349,12 @@ kir_internal void _K15_IRTranscodeFromR8G8ToR8G8B8(kir_u8* p_InputPixels, kir_u8
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -373,12 +377,12 @@ kir_internal void _K15_IRTranscodeFromR8G8ToR8G8B8A8(kir_u8* p_InputPixels, kir_
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8B8ToR8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8B8ToR8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -402,12 +406,12 @@ kir_internal void _K15_IRTranscodeFromR8G8B8ToR8(kir_u8* p_InputPixels, kir_u8* 
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8B8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8B8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -433,12 +437,12 @@ kir_internal void _K15_IRTranscodeFromR8G8B8ToR8G8(kir_u8* p_InputPixels, kir_u8
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8B8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8B8ToR8G8B8A8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -462,12 +466,12 @@ kir_internal void _K15_IRTranscodeFromR8G8B8ToR8G8B8A8(kir_u8* p_InputPixels, ki
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -496,12 +500,12 @@ kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8(kir_u8* p_InputPixels, kir_u8
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -527,12 +531,12 @@ kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8(kir_u8* p_InputPixels, kir_
 	}
 }
 
-kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u16 p_Width, kir_u16 p_Height)
+kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8B8(kir_u8* p_InputPixels, kir_u8* p_OutputPixels, kir_u32 p_Width, kir_u32 p_Height)
 {
-	kir_u16 posX = 0;
-	kir_u16 posY = 0;
+	kir_u32 posX = 0;
+	kir_u32 posY = 0;
 
-	kir_u16 pixelIndex = 0;
+	kir_u32 pixelIndex = 0;
 
 	kir_u8 r = 0;
 	kir_u8 g = 0;
@@ -567,14 +571,14 @@ kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8B8(kir_u8* p_InputPixels, ki
 
 kir_internal void _K15_IRTranscodeSourcePixelsToDestinationPixelFormat(kir_resize_context* p_Context)
 {
-	kir_u16 sourceWidth = p_Context->sourceWidth;
-	kir_u16 sourceHeight = p_Context->sourceHeight;
+	kir_u32 sourceWidth = p_Context->sourceWidth;
+	kir_u32 sourceHeight = p_Context->sourceHeight;
 	kir_u8* sourcePixels = p_Context->sourcePixels;
 
 	kir_pixel_format sourceFormat = p_Context->sourceFormat;
 	kir_pixel_format destinationFormat = p_Context->destinationFormat;
 
-	//FK: Do we actually have to transcode pixels?
+	//FK: check if we actually have to transcode pixels
 	if (sourceFormat != destinationFormat)
 	{
 		void* transcodedSourcePixels = K15_IR_MALLOC(sourceWidth * sourceHeight * kir_format_to_byte_lut[destinationFormat]);
@@ -608,8 +612,8 @@ kir_internal void _K15_IRTranscodeSourcePixelsToDestinationPixelFormat(kir_resiz
 	}
 }
 
-kir_internal kir_u16 _K15_IRGetWrappedCoordinate(kir_s16 p_Pos, 
-	kir_u16 p_Threshold, kir_wrap_mode p_WrapMode)
+kir_internal kir_u32 _K15_IRGetWrappedCoordinate(kir_s32 p_Pos, 
+	kir_s32 p_Threshold, kir_wrap_mode p_WrapMode)
 {
 	if (p_Pos < 0)
 	{
@@ -636,8 +640,8 @@ kir_internal kir_u16 _K15_IRGetWrappedCoordinate(kir_s16 p_Pos,
 	return p_Pos;
 }
 
-kir_internal kir_u16 _K15_IRGetWrappedIndex(kir_s16 p_PosX, kir_s16 p_PosY, 
-	kir_u16 p_Width, kir_u16 p_Height, kir_wrap_mode p_WrapMode)
+kir_internal kir_u32 _K15_IRGetWrappedIndex(kir_s32 p_PosX, kir_s32 p_PosY, 
+	kir_u32 p_Width, kir_u32 p_Height, kir_wrap_mode p_WrapMode)
 {
 	p_PosX = _K15_IRGetWrappedCoordinate(p_PosX, p_Width, p_WrapMode);
 	p_PosY = _K15_IRGetWrappedCoordinate(p_PosY, p_Height, p_WrapMode);
@@ -645,70 +649,21 @@ kir_internal kir_u16 _K15_IRGetWrappedIndex(kir_s16 p_PosX, kir_s16 p_PosY,
 	return (p_PosX + (p_PosY * p_Width));
 }
 
-kir_internal void _K15_IRCreateBilinearIndexTable(kir_u16 p_DestinationWidth, kir_u16 p_DestinationHeight,
-	kir_u16 p_SourceWidth, kir_u16 p_SourceHeight, kir_wrap_mode p_WrapMode, kir_pixel_format p_PixelFormat,
-	kir_bilinear_index* p_IndexTable)
-{
-	float u = 0.f;
-	float v = 0.f;
-
-	float sourcePosXFract = 0.f;
-	float sourcePosYFract = 0.f;
-
-  kir_s16 sourcePosX = 0;
-  kir_s16 sourcePosY = 0;
-
-	kir_u16 destinationPosX = 0;
-	kir_u16 destinationPosY = 0;
-
-	kir_u16 bpp = kir_format_to_byte_lut[p_PixelFormat];
-	kir_u16 indexTableCounter = 0;
-
-	kir_u16 i1 = 0;
-	kir_u16 i2 = 0;
-
-	for (destinationPosY = 0; destinationPosY < p_DestinationHeight; ++destinationPosY)
-	{
-    v = (float)destinationPosY / (float)p_DestinationHeight;
-		sourcePosYFract = (v * (float)p_SourceHeight) - 0.5f;
-
-		for (destinationPosX = 0; destinationPosX < p_DestinationWidth; ++destinationPosX)
-		{
-      u = (float)destinationPosX / (float)p_DestinationWidth;
-
-			sourcePosXFract = (u * (float)p_SourceWidth) - 0.5f;
-
-			sourcePosX = (kir_s16)K15_IR_FLOORF(sourcePosXFract);
-			sourcePosY = (kir_s16)K15_IR_FLOORF(sourcePosXFract);
-
-			sourcePosXFract = sourcePosXFract - (float)sourcePosX;
-			sourcePosYFract = sourcePosYFract - (float)sourcePosY;
-
-			i1 = _K15_IRGetWrappedIndex(sourcePosX + 0, sourcePosY, p_SourceWidth, p_SourceHeight, p_WrapMode);
-			i2 = _K15_IRGetWrappedIndex(sourcePosX + 1, sourcePosY, p_SourceWidth, p_SourceHeight, p_WrapMode);
-
-			p_IndexTable[indexTableCounter].i1 = i1 * bpp;
-			p_IndexTable[indexTableCounter].i2 = i2 * bpp;
-			p_IndexTable[indexTableCounter++].t = sourcePosXFract;
-		}	
-	}
-}
-
 kir_internal void _K15_IRDownsampleNearestNeighbour(kir_u8* p_SourcePixels, kir_u8* p_DestinationPixels, 
-	kir_u16 p_SourceWidth, kir_u16 p_SourceHeight, kir_u16 p_DestinationWidth, kir_u16 p_DestinationHeight,
+	kir_u32 p_SourceWidth, kir_u32 p_SourceHeight, kir_u32 p_DestinationWidth, kir_u32 p_DestinationHeight,
 	kir_pixel_format p_PixelFormat)
 {
-	kir_u16 sourcePosX = 0;
-	kir_u16 sourcePosY = 0;
+	kir_u32 sourcePosX = 0;
+	kir_u32 sourcePosY = 0;
 
-	kir_u16 destinationPosX = 0;
-	kir_u16 destinationPosY = 0;
+	kir_u32 destinationPosX = 0;
+	kir_u32 destinationPosY = 0;
 
 	float u = 0.f;
 	float v = 0.f;
 
-	kir_u16 sourcePixelIndex = 0;
-	kir_u16 destinationPixelIndex = 0;
+	kir_u32 sourcePixelIndex = 0;
+	kir_u32 destinationPixelIndex = 0;
 
 	kir_u32 bpp = kir_format_to_byte_lut[p_PixelFormat];
 	kir_u8* pixelBuffer = (kir_u8*)K15_IR_ALLOCA(bpp);
@@ -716,19 +671,65 @@ kir_internal void _K15_IRDownsampleNearestNeighbour(kir_u8* p_SourcePixels, kir_
 	for (destinationPosY = 0; destinationPosY < p_DestinationHeight; ++destinationPosY)
 	{
 		v = (float)destinationPosY / (float)p_DestinationHeight;
-
+		sourcePosY = (kir_u32)(v * (float)p_SourceHeight);
+		
 		for (destinationPosX = 0; destinationPosX < p_DestinationWidth; ++destinationPosX)
 		{
 			u = (float)destinationPosX / (float)p_DestinationWidth;
 
-			sourcePosX = (kir_u16)(u * (float)p_SourceWidth);
-			sourcePosY = (kir_u16)(v * (float)p_SourceHeight);
+			sourcePosX = (kir_u32)(u * (float)p_SourceWidth);
 
 			sourcePixelIndex = sourcePosX + (sourcePosY * p_SourceWidth);
 			destinationPixelIndex = destinationPosX + (destinationPosY * p_DestinationWidth);
 			
 			_K15_IRReadPixelFromIndex(sourcePixelIndex, p_PixelFormat, p_SourcePixels, pixelBuffer);
 			_K15_IRWritePixelToIndex(destinationPixelIndex, p_PixelFormat, p_DestinationPixels, pixelBuffer);
+		}	
+	}
+}
+
+kir_internal void _K15_IRCreateBilinearIndexTable(kir_u32 p_DestinationWidth, kir_u32 p_DestinationHeight,
+                                                  kir_u32 p_SourceWidth, kir_u32 p_SourceHeight, 
+                                                  kir_wrap_mode p_WrapMode, kir_pixel_format p_PixelFormat,
+                                                  kir_bilinear_index* p_IndexTable)
+{
+	float u = 0.f;
+	float v = 0.f;
+
+	float sourcePosXFract = 0.f;
+
+	kir_s32 sourcePosX = 0;
+	kir_s32 sourcePosY = 0;
+
+	kir_u32 destinationPosX = 0;
+	kir_u32 destinationPosY = 0;
+
+	kir_u32 indexTableCounter = 0;
+
+	kir_u32 i1 = 0;
+	kir_u32 i2 = 0;
+
+	for (destinationPosY = 0; destinationPosY < p_DestinationHeight; ++destinationPosY)
+	{
+		for (destinationPosX = 0; destinationPosX < p_DestinationWidth; ++destinationPosX)
+		{
+			u = (float)destinationPosX / (float)p_DestinationWidth;
+			v = (float)destinationPosY / (float)p_DestinationHeight;
+
+			sourcePosXFract = (u * (float)p_SourceWidth) - 0.5f;
+			sourcePosY = (v * (float)p_SourceHeight) - 0.5f;
+
+			sourcePosX = (kir_s16)K15_IR_FLOORF(sourcePosXFract);
+			sourcePosY = (kir_s16)K15_IR_FLOORF(sourcePosY);
+
+			sourcePosXFract = sourcePosXFract - (float)sourcePosX;
+
+			i1 = _K15_IRGetWrappedIndex(sourcePosX + 0, sourcePosY, p_SourceWidth, p_SourceHeight, p_WrapMode);
+			i2 = _K15_IRGetWrappedIndex(sourcePosX + 1, sourcePosY, p_SourceWidth, p_SourceHeight, p_WrapMode);
+
+			p_IndexTable[indexTableCounter].i1 = i1;
+			p_IndexTable[indexTableCounter].i2 = i2;
+			p_IndexTable[indexTableCounter++].t = sourcePosXFract;
 		}	
 	}
 }
@@ -740,25 +741,25 @@ kir_internal void _K15_IRHorizontallyDownsampleBilinear(kir_u8* p_SourcePixels, 
 	float sourcePosXFract = 0.f;
 	float sourcePosYFract = 0.f;
 
-	kir_u16 sourcePosX = 0;
-	kir_u16 sourcePosY = 0;
+	kir_u32 sourcePosX = 0;
+	kir_u32 sourcePosY = 0;
 
-	kir_u16 destinationPosX = 0;
-	kir_u16 destinationPosY = 0;
+	kir_u32 destinationPosX = 0;
+	kir_u32 destinationPosY = 0;
 
-	kir_u16 sourcePixelIndex1 = 0;
-	kir_u16 sourcePixelIndex2 = 0;
+	kir_u32 sourcePixelIndex1 = 0;
+	kir_u32 sourcePixelIndex2 = 0;
 
 	float u = 0.f;
 	float v = 0.f;
 	float t = 0.f;
 
-	kir_u16 destinationPixelIndex = 0;
+	kir_u32 destinationPixelIndex = 0;
 
-	kir_u16 componentIndex = 0;
-	kir_u16 indexTableIndex = 0;
-	kir_u16 sizeIndexTable = p_DestinationWidth * p_DestinationHeight * 4;
-	kir_u16 sizeIndexTableInBytes = sizeIndexTable * sizeof(kir_bilinear_index);
+	kir_u32 componentIndex = 0;
+	kir_u32 indexTableIndex = 0;
+	kir_u32 sizeIndexTable = p_DestinationWidth * p_DestinationHeight;
+	kir_u32 sizeIndexTableInBytes = sizeIndexTable * sizeof(kir_bilinear_index);
 	kir_bilinear_index* indexTable = (kir_bilinear_index*)K15_IR_MALLOC(sizeIndexTableInBytes);
 
 	kir_u32 bpp = kir_format_to_byte_lut[p_PixelFormat];
@@ -771,13 +772,13 @@ kir_internal void _K15_IRHorizontallyDownsampleBilinear(kir_u8* p_SourcePixels, 
 
 	for (indexTableIndex = 0; indexTableIndex < sizeIndexTable; ++indexTableIndex, ++destinationPosX)
 	{
-		if (destinationPosX > p_DestinationWidth)
+		if (destinationPosX >= p_DestinationWidth)
 		{
 			destinationPosX = 0;
 			++destinationPosY;
 		}
 
-		destinationPixelIndex = (destinationPosX + (destinationPosY * p_DestinationWidth));
+		destinationPixelIndex = (destinationPosY + (destinationPosX * p_DestinationHeight));
 
 		sourcePixelIndex1 = indexTable[indexTableIndex].i1;
 		sourcePixelIndex2 = indexTable[indexTableIndex].i2;
@@ -791,8 +792,10 @@ kir_internal void _K15_IRHorizontallyDownsampleBilinear(kir_u8* p_SourcePixels, 
 		_K15_IRReadPixelFromIndex(destinationPixelIndex, p_PixelFormat, p_DestinationPixels, outputPixelBuffer);
 
 		for (componentIndex = 0; componentIndex < bpp; ++componentIndex)
-			outputPixelBuffer[componentIndex] += _K15_IRLerpU8(t, inputPixelBuffer1[componentIndex], inputPixelBuffer2[componentIndex]) / 2;
-
+		{
+			kir_u8 lerpedComponent = _K15_IRLerpU8(t, inputPixelBuffer1[componentIndex], inputPixelBuffer2[componentIndex]);
+			outputPixelBuffer[componentIndex] += lerpedComponent;
+		}
 		_K15_IRWritePixelToIndex(destinationPixelIndex, p_PixelFormat, p_DestinationPixels, outputPixelBuffer);
 	}
 }
@@ -802,6 +805,14 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 	kir_filter filter = p_Context->filter;
 	kir_u32 flags = p_Context->flags;
 	kir_u8* sourcePixels = (p_Context->transcodedSourcePixels ? p_Context->transcodedSourcePixels : p_Context->sourcePixels);
+	kir_u8* destinationPixels = p_Context->destinationPixels;
+	kir_u32 destinationWidth = p_Context->destinationWidth;
+	kir_u32 destinationHeight = p_Context->destinationHeight;
+	int bpp = kir_format_to_byte_lut[p_Context->destinationFormat];
+
+	kir_u32 destinationPixelDataSizeInBytes = destinationWidth * destinationHeight * bpp;
+	K15_IR_MEMSET(destinationPixels, 0, destinationPixelDataSizeInBytes);
+
 
 	if (filter == K15_IR_NEAREST_NEIGHBOUR_FILTER)
 	{
@@ -820,9 +831,21 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 		if (flags & K15_IR_CONTEXT_DOWNSAMPLE_HORIZONTAL_FLAG)
 		{
 			_K15_IRHorizontallyDownsampleBilinear(sourcePixels, horizontalTempBuffer, 
-				p_Context->sourceWidth, p_Context->sourceHeight, p_Context->sourceHeight,
-				p_Context->destinationWidth, p_Context->destinationFormat, p_Context->wrapMode);
+				p_Context->sourceWidth, p_Context->sourceHeight, p_Context->destinationWidth,
+				p_Context->sourceWidth, p_Context->destinationFormat, p_Context->wrapMode);
 		}
+
+    	//stbi_write_png("output.png", p_Context->sourceWidth, p_Context->destinationWidth, bpp, horizontalTempBuffer, p_Context->sourceWidth * bpp);
+
+		if (flags & K15_IR_CONTEXT_DOWNSAMPLE_VERTICAL_FLAG)
+		{
+			_K15_IRHorizontallyDownsampleBilinear(horizontalTempBuffer, destinationPixels, 
+				p_Context->sourceWidth, p_Context->destinationWidth, p_Context->destinationWidth,
+				p_Context->destinationHeight, p_Context->destinationFormat, p_Context->wrapMode);
+		}
+
+		stbi_write_png("output.png", p_Context->destinationWidth, p_Context->destinationHeight, bpp, destinationPixels, p_Context->destinationWidth * bpp);
+
 		// else if (flags & K15_IR_CONTEXT_DOWNSAMPLE_HORIZONTAL_FLAG)
 		// 	_K15_IR_HorizontallyDownsampleBilinear(p_Context);
 	}
@@ -830,10 +853,10 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 	return K15_IR_RESULT_SUCCESS;
 }
 
-kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixelWidth, 
-	kir_u16 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8* p_DestinationImageData, kir_u16 p_DestinationImagePixelWidth,
-	kir_u16 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat,
+kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImagePixelWidth, 
+	kir_u32 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
+	kir_u8* p_DestinationImageData, kir_u32 p_DestinationImagePixelWidth,
+	kir_u32 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat,
 	kir_wrap_mode p_WrapMode)
 {
 	kir_resize_context ctx = {0};

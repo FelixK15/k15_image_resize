@@ -79,11 +79,11 @@ void resizeImage()
 
 		if (resizeFunction)
 		{
- 			destinationImageWidth = sourceImageWidth / 2;
- 			destinationImageHeight = sourceImageHeight / 2;
+ 			// destinationImageWidth = sourceImageWidth / 2;
+ 			// destinationImageHeight = sourceImageHeight / 2;
 
-//			 destinationImageWidth = 350;
-//			 destinationImageHeight = 200;
+			 destinationImageWidth = 350;
+			 destinationImageHeight = 200;
 
 
 			if (destinationImageData)
@@ -98,7 +98,7 @@ void resizeImage()
 				2, destinationImageData, destinationImageWidth, 
 				destinationImageHeight, 2);
 
-     		stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
+     		//stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
      		exit(0);
      		
 			free(destinationImageDataBGR);
