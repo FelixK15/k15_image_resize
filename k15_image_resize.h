@@ -697,6 +697,7 @@ kir_internal void _K15_IRCreateBilinearIndexTable(kir_u32 p_DestinationWidth, ki
 	float v = 0.f;
 
 	float sourcePosXFract = 0.f;
+	float sourcePosYFract = 0.f;
 
 	kir_s32 sourcePosX = 0;
 	kir_s32 sourcePosY = 0;
@@ -711,17 +712,16 @@ kir_internal void _K15_IRCreateBilinearIndexTable(kir_u32 p_DestinationWidth, ki
 
 	for (destinationPosY = 0; destinationPosY < p_DestinationHeight; ++destinationPosY)
 	{
+		v = (float)destinationPosY / (float)p_DestinationHeight;
+		sourcePosYFract = (v * (float)p_SourceHeight) + 0.5f;
+		sourcePosY = (kir_s16)K15_IR_FLOORF(sourcePosYFract);
+
 		for (destinationPosX = 0; destinationPosX < p_DestinationWidth; ++destinationPosX)
 		{
 			u = (float)destinationPosX / (float)p_DestinationWidth;
-			v = (float)destinationPosY / (float)p_DestinationHeight;
 
-			sourcePosXFract = (u * (float)p_SourceWidth) - 0.5f;
-			sourcePosY = (v * (float)p_SourceHeight) - 0.5f;
-
+			sourcePosXFract = (u * (float)p_SourceWidth) + 0.5f;
 			sourcePosX = (kir_s16)K15_IR_FLOORF(sourcePosXFract);
-			sourcePosY = (kir_s16)K15_IR_FLOORF(sourcePosY);
-
 			sourcePosXFract = sourcePosXFract - (float)sourcePosX;
 
 			i1 = _K15_IRGetWrappedIndex(sourcePosX + 0, sourcePosY, p_SourceWidth, p_SourceHeight, p_WrapMode);
@@ -808,6 +808,11 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 	kir_u8* destinationPixels = p_Context->destinationPixels;
 	kir_u32 destinationWidth = p_Context->destinationWidth;
 	kir_u32 destinationHeight = p_Context->destinationHeight;
+	kir_u32 sourceHeight = p_Context->sourceHeight;
+	kir_u32 sourceWidth = p_Context->sourceWidth;
+	kir_wrap_mode wrapMode = p_Context->wrapMode;
+	kir_pixel_format pixelFormat = p_Context->destinationFormat;
+
 	int bpp = kir_format_to_byte_lut[p_Context->destinationFormat];
 
 	kir_u32 destinationPixelDataSizeInBytes = destinationWidth * destinationHeight * bpp;
@@ -822,29 +827,38 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 	}
 	else if (filter == K15_IR_BILINEAR_FILTER)
 	{
+		kir_u32 tempWidth = destinationWidth;
+		kir_u32 tempHeight = sourceHeight;
+
 		kir_pixel_format format = p_Context->destinationFormat;
 		kir_u32 bpp = kir_format_to_byte_lut[format];
-		kir_u32 tempBufferSizeInBytes = p_Context->destinationWidth * p_Context->sourceHeight * bpp;
+		kir_u32 tempBufferSizeInBytes = tempWidth * tempHeight * bpp;
 		kir_u8* horizontalTempBuffer = (kir_u8*)K15_IR_MALLOC(tempBufferSizeInBytes);
 		K15_IR_MEMSET(horizontalTempBuffer, 0, tempBufferSizeInBytes);
 
 		if (flags & K15_IR_CONTEXT_DOWNSAMPLE_HORIZONTAL_FLAG)
 		{
 			_K15_IRHorizontallyDownsampleBilinear(sourcePixels, horizontalTempBuffer, 
-				p_Context->sourceWidth, p_Context->sourceHeight, p_Context->destinationWidth,
-				p_Context->sourceWidth, p_Context->destinationFormat, p_Context->wrapMode);
+				sourceWidth, sourceHeight, 
+				tempWidth, tempHeight, 
+				pixelFormat, wrapMode);
 		}
+		
+		//FK: Image now vertically aligned as opposed to horizintally.
+		//	  Lets switch width and height, so everything is back to "normal".
+		tempWidth = sourceHeight;
+		tempHeight = destinationWidth;
 
-    	//stbi_write_png("output.png", p_Context->sourceWidth, p_Context->destinationWidth, bpp, horizontalTempBuffer, p_Context->sourceWidth * bpp);
+		destinationWidth = p_Context->destinationHeight;
+		destinationHeight = p_Context->destinationWidth;
 
 		if (flags & K15_IR_CONTEXT_DOWNSAMPLE_VERTICAL_FLAG)
 		{
 			_K15_IRHorizontallyDownsampleBilinear(horizontalTempBuffer, destinationPixels, 
-				p_Context->sourceWidth, p_Context->destinationWidth, p_Context->destinationWidth,
-				p_Context->destinationHeight, p_Context->destinationFormat, p_Context->wrapMode);
+				tempWidth, tempHeight, 
+				destinationWidth, destinationHeight,
+				pixelFormat, wrapMode);
 		}
-
-		stbi_write_png("output.png", p_Context->destinationWidth, p_Context->destinationHeight, bpp, destinationPixels, p_Context->destinationWidth * bpp);
 
 		// else if (flags & K15_IR_CONTEXT_DOWNSAMPLE_HORIZONTAL_FLAG)
 		// 	_K15_IR_HorizontallyDownsampleBilinear(p_Context);
@@ -870,7 +884,8 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 	ctx.sourceFormat = p_SourceImageDataPixelFormat;
 	ctx.destinationFormat = p_DestinationImageDataPixelFormat;
 	ctx.wrapMode = p_WrapMode;
-	ctx.filter = K15_IR_BILINEAR_FILTER;
+	//ctx.filter = K15_IR_BILINEAR_FILTER;
+	ctx.filter = K15_IR_NEAREST_NEIGHBOUR_FILTER;
 	ctx.flags |= (ctx.destinationWidth > ctx.sourceWidth ? K15_IR_CONTEXT_UPSAMPLE_HORIZONTAL_FLAG : K15_IR_CONTEXT_DOWNSAMPLE_HORIZONTAL_FLAG);
 	ctx.flags |= (ctx.destinationHeight > ctx.sourceHeight ? K15_IR_CONTEXT_UPSAMPLE_VERTICAL_FLAG : K15_IR_CONTEXT_DOWNSAMPLE_VERTICAL_FLAG);
 
