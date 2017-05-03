@@ -180,6 +180,15 @@ typedef struct
 	float t;
 } kir_bilinear_index;
 
+typedef struct 
+{
+	kir_u32 i1;
+	kir_u32 i2;
+	kir_u32 i3;
+	kir_u32 i4;
+	float t;
+} kir_bicubic_index;
+
 typedef struct
 {
 	void* horizontalBuffer;
@@ -197,6 +206,28 @@ typedef struct
 	kir_u32 destinationHeight;
 
 } kir_resize_context;
+
+kir_internal kir_u8 _K15_IRCubicHermiteU8(float p_Factor, 
+	kir_u8 p_Value1, kir_u8 p_Value2, kir_u8 p_Value3, kir_u8 p_Value4)
+{
+	float A = p_Value1;
+	float B = p_Value2;
+	float C = p_Value3;
+	float D = p_Value4;
+	float t = p_Factor;
+
+	//http://blog.demofox.org/2015/08/15/resizing-images-with-bicubic-interpolation/
+	float a = -A / 2.0f + (3.0f*B) / 2.0f - (3.0f*C) / 2.0f + D / 2.0f;
+    float b = A - (5.0f*B) / 2.0f + 2.0f*C - D / 2.0f;
+    float c = -A / 2.0f + C / 2.0f;
+    float d = B;
+ 
+	float r = a*t*t*t + b*t*t + c*t + d;
+
+	r = K15_IR_CLAMP(r, 0.f, 255.f);
+
+	return (kir_u8)r;
+}
 
 kir_internal kir_u8 _K15_IRLerpU8(float p_Factor, kir_u8 p_StartValue, kir_u8 p_EndValue)
 {
@@ -626,7 +657,7 @@ kir_internal kir_u32 _K15_IRGetWrappedCoordinate(kir_s32 p_Pos,
 			return (p_Threshold - absPos);
 		}
 	}
-	else if (p_Pos > p_Threshold)
+	else if (p_Pos >= p_Threshold)
 	{
 		if (p_WrapMode == K15_IR_WRAP_CLAMP)
 			return p_Threshold - 1;
@@ -702,7 +733,7 @@ kir_internal void _K15_IRCalculateBilinearIndexTableForScanline(kir_u32 p_Source
 	for (destinationPosX = 0; destinationPosX < p_DestinationWidth; ++destinationPosX, ++indexTablePos)
 	{
 		u = (float)destinationPosX / (float)p_DestinationWidth;
-		sourcePosXFract = (u * (float)p_SourceWidth) + 0.5f;
+		sourcePosXFract = (u * (float)p_SourceWidth);
 		sourcePosX = (kir_u32)K15_IR_FLOORF(sourcePosXFract);
 		t = sourcePosXFract - (float)sourcePosX;
 
@@ -716,7 +747,6 @@ kir_internal void _K15_IRHorizontallySampleBilinear(kir_u8* p_SourcePixels, kir_
 	kir_u16 p_SourceWidth, kir_u16 p_SourceHeight, kir_u16 p_DestinationWidth, kir_u16 p_DestinationHeight,
 	kir_pixel_format p_PixelFormat, kir_wrap_mode p_WrapMode)
 {
-	float sourcePosXFract = 0.f;
 	kir_u32 sourcePosY = 0;
 
 	kir_u32 destinationPosX = 0;
@@ -781,6 +811,116 @@ kir_internal void _K15_IRHorizontallySampleBilinear(kir_u8* p_SourcePixels, kir_
 	}
 }
 
+kir_internal void _K15_IRCalculateBicubicIndexTableForScanline(kir_u32 p_SourceWidth, 
+	kir_u32 p_DestinationWidth, kir_wrap_mode p_WrapMode, kir_bicubic_index* p_IndexTable)
+{
+	kir_u32 sourcePosX = 0;
+	kir_u32 destinationPosX = 0;
+	kir_u32 indexTablePos = 0;
+
+	float sourcePosXFract = 0.f;
+	float u = 0.f;
+	float t = 0.f;
+
+	for (destinationPosX = 0; destinationPosX < p_DestinationWidth; ++destinationPosX, ++indexTablePos)
+	{
+		u = (float)destinationPosX / (float)p_DestinationWidth;
+		sourcePosXFract = (u * (float)p_SourceWidth);
+		sourcePosX = (kir_u32)K15_IR_FLOORF(sourcePosXFract);
+		t = sourcePosXFract - (float)sourcePosX;
+
+		p_IndexTable[indexTablePos].i1 = _K15_IRGetWrappedCoordinate(sourcePosX - 1, p_SourceWidth, p_WrapMode); 
+		p_IndexTable[indexTablePos].i2 = _K15_IRGetWrappedCoordinate(sourcePosX + 0, p_SourceWidth, p_WrapMode); 
+		p_IndexTable[indexTablePos].i3 = _K15_IRGetWrappedCoordinate(sourcePosX + 1, p_SourceWidth, p_WrapMode); 
+		p_IndexTable[indexTablePos].i4 = _K15_IRGetWrappedCoordinate(sourcePosX + 2, p_SourceWidth, p_WrapMode); 
+		p_IndexTable[indexTablePos].t  = t;
+	} 
+}
+
+kir_internal void _K15_IRHorizontallySampleBicubic(kir_u8* p_SourcePixels, kir_u8* p_DestinationPixels,
+	kir_u16 p_SourceWidth, kir_u16 p_SourceHeight, kir_u16 p_DestinationWidth, kir_u16 p_DestinationHeight,
+	kir_pixel_format p_PixelFormat, kir_wrap_mode p_WrapMode)
+{
+	kir_u32 sourcePosY = 0;
+
+	kir_u32 destinationPosX = 0;
+	kir_u32 destinationPosY = 0;
+
+	kir_u32 sourcePixelIndex1 = 0;
+	kir_u32 sourcePixelIndex2 = 0;
+	kir_u32 sourcePixelIndex3 = 0;
+	kir_u32 sourcePixelIndex4 = 0;
+
+	float t = 0.f;
+
+	kir_u32 destinationPixelIndex = 0;
+	kir_u32 componentIndex = 0;
+
+	kir_u32 bpp = kir_format_to_byte_lut[p_PixelFormat];
+	kir_u8* inputPixelBuffer1 = (kir_u8*)K15_IR_ALLOCA(bpp);
+	kir_u8* inputPixelBuffer2 = (kir_u8*)K15_IR_ALLOCA(bpp);
+	kir_u8* inputPixelBuffer3 = (kir_u8*)K15_IR_ALLOCA(bpp);
+	kir_u8* inputPixelBuffer4 = (kir_u8*)K15_IR_ALLOCA(bpp);
+	kir_u8* outputPixelBuffer = (kir_u8*)K15_IR_ALLOCA(bpp);
+
+	kir_u32 scanlineSizeInBytes = bpp * p_SourceWidth;
+	kir_u32 scanlineOffsetInBytes = 0;
+	kir_u8* scanlineBuffer = (kir_u8*)K15_IR_MALLOC(scanlineSizeInBytes);
+
+	//FK: There'll be one entry for each horizontal destination pixel.
+	kir_u32 numIndexTableEntries = p_DestinationWidth;
+	kir_u32 indexTableSizeInBytes = numIndexTableEntries * sizeof(kir_bicubic_index);
+	kir_u32 indexTablePos = 0;
+	kir_bicubic_index* scanlineIndexTable = (kir_bicubic_index*)K15_IR_MALLOC(indexTableSizeInBytes);
+
+	//FK: Fill the index table. Basically for each horizontal destination pixel, the
+	//	  4 contribution source pixels together with the blend factor is calculated.
+	_K15_IRCalculateBicubicIndexTableForScanline(p_SourceWidth, p_DestinationWidth, 
+		p_WrapMode, scanlineIndexTable);
+
+	for (sourcePosY = 0; sourcePosY < p_SourceHeight; ++sourcePosY, ++destinationPosY)
+	{
+		//FK: Get scan line for current Y position.
+		scanlineOffsetInBytes = sourcePosY * p_SourceWidth * bpp;		
+		K15_IR_MEMCPY(scanlineBuffer, p_SourcePixels + scanlineOffsetInBytes, scanlineSizeInBytes);
+
+		for (destinationPosX = 0, indexTablePos = 0; 
+			destinationPosX < p_DestinationWidth; 
+			++destinationPosX, ++indexTablePos)
+		{
+			//FK: Calculate index where we write the interpolated pixel to
+			destinationPixelIndex = (destinationPosY + (destinationPosX * p_DestinationHeight));
+
+			sourcePixelIndex1 = scanlineIndexTable[indexTablePos].i1;
+			sourcePixelIndex2 = scanlineIndexTable[indexTablePos].i2;
+			sourcePixelIndex3 = scanlineIndexTable[indexTablePos].i3;
+			sourcePixelIndex4 = scanlineIndexTable[indexTablePos].i4;
+			t = scanlineIndexTable[indexTablePos].t;
+
+			//FK: Read pixels to interpolate
+			_K15_IRReadPixelFromIndex(sourcePixelIndex1, p_PixelFormat, scanlineBuffer, inputPixelBuffer1);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex2, p_PixelFormat, scanlineBuffer, inputPixelBuffer2);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex3, p_PixelFormat, scanlineBuffer, inputPixelBuffer3);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex4, p_PixelFormat, scanlineBuffer, inputPixelBuffer4);
+
+			//FK: Read pixel to accumulate - add interpolated value to existing pixel values 
+			_K15_IRReadPixelFromIndex(destinationPixelIndex, p_PixelFormat, p_DestinationPixels, outputPixelBuffer);
+
+			for (componentIndex = 0; componentIndex < bpp; ++componentIndex)
+			{
+				kir_u8 lerpedComponent = _K15_IRCubicHermiteU8(t,
+					inputPixelBuffer1[componentIndex],
+					inputPixelBuffer2[componentIndex],
+					inputPixelBuffer3[componentIndex],
+					inputPixelBuffer4[componentIndex]);
+
+				outputPixelBuffer[componentIndex] += lerpedComponent;
+			}
+			_K15_IRWritePixelToIndex(destinationPixelIndex, p_PixelFormat, p_DestinationPixels, outputPixelBuffer);
+		}
+	}
+}
+
 kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 {
 	kir_filter filter = p_Context->filter;
@@ -799,14 +939,14 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 	kir_u32 destinationPixelDataSizeInBytes = destinationWidth * destinationHeight * bpp;
 	K15_IR_MEMSET(destinationPixels, 0, destinationPixelDataSizeInBytes);
 
-
 	if (filter == K15_IR_NEAREST_NEIGHBOUR_FILTER)
 	{
 		_K15_IRSampleNearestNeighbour(sourcePixels, p_Context->destinationPixels,
 			p_Context->sourceWidth, p_Context->sourceHeight, p_Context->destinationWidth, 
 			p_Context->destinationHeight, p_Context->destinationFormat);
 	}
-	else if (filter == K15_IR_BILINEAR_FILTER)
+	else if (filter == K15_IR_BILINEAR_FILTER ||
+		filter == K15_IR_BICUBIC_FILTER)
 	{
 		kir_u32 tempWidth = destinationWidth;
 		kir_u32 tempHeight = sourceHeight;
@@ -817,30 +957,46 @@ kir_internal kir_result _K15_IRResample(kir_resize_context* p_Context)
 		kir_u8* horizontalTempBuffer = (kir_u8*)K15_IR_MALLOC(tempBufferSizeInBytes);
 		K15_IR_MEMSET(horizontalTempBuffer, 0, tempBufferSizeInBytes);
 
-		_K15_IRHorizontallySampleBilinear(sourcePixels, horizontalTempBuffer, 
-			sourceWidth, sourceHeight, 
-			tempWidth, tempHeight, 
-			pixelFormat, wrapMode);
+		if (filter == K15_IR_BILINEAR_FILTER)
+		{
+			_K15_IRHorizontallySampleBilinear(sourcePixels, horizontalTempBuffer, 
+				sourceWidth, sourceHeight, 
+				tempWidth, tempHeight, 
+				pixelFormat, wrapMode);
 		
-     	stbi_write_png("output.png", tempWidth, tempHeight, 3, horizontalTempBuffer, destinationWidth * 3);
+			//FK: Image now vertically aligned as opposed to horizintally.
+			//	  Lets switch width and height, so everything is back to "normal".
+			tempWidth = sourceHeight;
+			tempHeight = destinationWidth;
 
-		//FK: Image now vertically aligned as opposed to horizintally.
-		//	  Lets switch width and height, so everything is back to "normal".
-		tempWidth = sourceHeight;
-		tempHeight = destinationWidth;
+			destinationWidth = p_Context->destinationHeight;
+			destinationHeight = p_Context->destinationWidth;
 
-		destinationWidth = p_Context->destinationHeight;
-		destinationHeight = p_Context->destinationWidth;
+			_K15_IRHorizontallySampleBilinear(horizontalTempBuffer, destinationPixels, 
+				tempWidth, tempHeight, 
+				destinationWidth, destinationHeight,
+				pixelFormat, wrapMode);
+		}
+		else if (filter == K15_IR_BICUBIC_FILTER)
+		{
+			_K15_IRHorizontallySampleBicubic(sourcePixels, horizontalTempBuffer,
+				sourceWidth, sourceHeight,
+				tempWidth, tempHeight,
+				pixelFormat, wrapMode);
 
-		_K15_IRHorizontallySampleBilinear(horizontalTempBuffer, destinationPixels, 
-			tempWidth, tempHeight, 
-			destinationWidth, destinationHeight,
-			pixelFormat, wrapMode);
+			//FK: Image now vertically aligned as opposed to horizintally.
+			//	  Lets switch width and height, so everything is back to "normal".
+			tempWidth = sourceHeight;
+			tempHeight = destinationWidth;
 
-     	//stbi_write_png("output.png", destinationWidth, destinationHeight, 3, destinationPixels, destinationWidth * 3);
-	}
-	else if (filter == K15_IR_BICUBIC_FILTER)
-	{
+			destinationWidth = p_Context->destinationHeight;
+			destinationHeight = p_Context->destinationWidth;
+
+			_K15_IRHorizontallySampleBicubic(horizontalTempBuffer, destinationPixels, 
+				tempWidth, tempHeight, 
+				destinationWidth, destinationHeight,
+				pixelFormat, wrapMode);
+		}
 
 	}
 
@@ -864,7 +1020,8 @@ kir_result K15_IRScaleImageData(kir_u8* p_SourceImageData, kir_u32 p_SourceImage
 	ctx.sourceFormat = p_SourceImageDataPixelFormat;
 	ctx.destinationFormat = p_DestinationImageDataPixelFormat;
 	ctx.wrapMode = p_WrapMode;
-	ctx.filter = K15_IR_BILINEAR_FILTER;
+	ctx.filter = K15_IR_BICUBIC_FILTER;
+	//ctx.filter = K15_IR_BILINEAR_FILTER;
 	//ctx.filter = K15_IR_NEAREST_NEIGHBOUR_FILTER;
 	ctx.flags |= (ctx.destinationWidth > ctx.sourceWidth ? K15_IR_CONTEXT_UPSAMPLE_HORIZONTAL_FLAG : K15_IR_CONTEXT_DOWNSAMPLE_HORIZONTAL_FLAG);
 	ctx.flags |= (ctx.destinationHeight > ctx.sourceHeight ? K15_IR_CONTEXT_UPSAMPLE_VERTICAL_FLAG : K15_IR_CONTEXT_DOWNSAMPLE_VERTICAL_FLAG);

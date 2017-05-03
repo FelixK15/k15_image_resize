@@ -82,8 +82,8 @@ void resizeImage()
  			// destinationImageWidth = sourceImageWidth / 2;
  			// destinationImageHeight = sourceImageHeight / 2;
 
-			 destinationImageWidth = 350;
-			 destinationImageHeight = 200;
+			 destinationImageWidth = sourceImageWidth * 16;
+			 destinationImageHeight = sourceImageHeight * 16;
 
 
 			if (destinationImageData)
@@ -98,8 +98,8 @@ void resizeImage()
 				2, destinationImageData, destinationImageWidth, 
 				destinationImageHeight, 2);
 
-     		//stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
-     		exit(0);
+     		stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
+     		//exit(0);
      		
 			free(destinationImageDataBGR);
 			destinationImageDataBGR = convertToBGR(destinationImageData, 
@@ -288,12 +288,12 @@ void resizeBackbuffer(HWND p_HWND, uint32 p_Width, uint32 p_Height)
 
 void setup(HWND p_HWND)
 {	
-	// HDC originalDC = GetDC(p_HWND);
-	// backbufferDC = CreateCompatibleDC(originalDC);
-	// resizeBackbuffer(p_HWND, screenWidth, screenHeight);
+	HDC originalDC = GetDC(p_HWND);
+	backbufferDC = CreateCompatibleDC(originalDC);
+	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
-	sourceImageData = stbi_load("image2.png", &sourceImageWidth, &sourceImageHeight, 
+	sourceImageData = stbi_load("image4.png", &sourceImageWidth, &sourceImageHeight, 
 		&sourceImageColorComponents, 0);
 
 	free(sourceImageDataBGR);
@@ -405,14 +405,10 @@ int CALLBACK WinMain(HINSTANCE hInstance,
 	LARGE_INTEGER performanceFrequency;
 	QueryPerformanceFrequency(&performanceFrequency);
 
-	HWND hwnd = (HWND)INVALID_HANDLE_VALUE;
+	HWND hwnd = setupWindow(hInstance, screenWidth, screenHeight);
 
-	// HWND hwnd = setupWindow(hInstance, screenWidth, screenHeight);
-
-	// if (hwnd == INVALID_HANDLE_VALUE)
-	// 	return -1;
-
-	// setup(hwnd);
+	if (hwnd == INVALID_HANDLE_VALUE)
+	 	return -1;
 
 	setup(hwnd);
 
