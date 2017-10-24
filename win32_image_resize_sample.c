@@ -79,11 +79,11 @@ void resizeImage()
 
 		if (resizeFunction)
 		{
- 			// destinationImageWidth = sourceImageWidth / 2;
- 			// destinationImageHeight = sourceImageHeight / 2;
+ 			 destinationImageWidth = sourceImageWidth / 2;
+ 			 destinationImageHeight = sourceImageHeight / 2;
 
-			 destinationImageWidth = sourceImageWidth * 16;
-			 destinationImageHeight = sourceImageHeight * 16;
+// 			 destinationImageWidth = sourceImageWidth * 16;
+// 			 destinationImageHeight = sourceImageHeight * 16;
 
 
 			if (destinationImageData)
@@ -258,8 +258,8 @@ HWND setupWindow(HINSTANCE p_Instance, int p_Width, int p_Height)
 		MessageBox(0, "Error creating Window.\n", "Error!", 0);
 	else
 	{
-		allocateDebugConsole();
 		ShowWindow(hwnd, SW_SHOW);
+		allocateDebugConsole();
 	}
 	return hwnd;
 }
@@ -293,7 +293,7 @@ void setup(HWND p_HWND)
 	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
-	sourceImageData = stbi_load("image4.png", &sourceImageWidth, &sourceImageHeight, 
+	sourceImageData = stbi_load("image3.png", &sourceImageWidth, &sourceImageHeight, 
 		&sourceImageColorComponents, 0);
 
 	free(sourceImageDataBGR);
@@ -457,7 +457,7 @@ extern void resizeFunction(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixel
 		p_SourceImagePixelHeight, p_SourceImageDataPixelFormat,
 		p_DestinationImageData, p_DestinationImagePixelWidth,
 		p_DestinationImagePixelHeight, p_DestinationImageDataPixelFormat,
-		K15_IR_WRAP_CLAMP);
+		K15_IR_WRAP_CLAMP, K15_IR_BICUBIC_FILTER_MODE);
 }
 
 
