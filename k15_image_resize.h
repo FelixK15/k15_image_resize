@@ -84,6 +84,9 @@ typedef enum
 	K15_IR_BICUBIC_FILTER_MODE				= 2
 } kir_filter_mode;
 
+unsigned int K15_IRGetRequiredMemorySizeInBytes(unsigned int sourceWidth, unsigned int sourceHeight, kir_pixel_format sourcePixelFormat,
+	unsigned int destinationWidth, unsigned int destinationHeight, kir_pixel_format destinationPixelFormat, kir_filter_mode filterMode);
+
 kir_result K15_IRScaleImageDataWithCustomMemory(unsigned char* pCustomMemory, unsigned int customMemorySizeInBytes, 
 	const unsigned char* pSourceImageData, unsigned int sourceImageWidth, unsigned int sourceImageHeight, kir_pixel_format sourcePixelFormat,
 	unsigned char* pDestinationImageData, unsigned int destinationWidth, unsigned int destinationHeight, kir_pixel_format destinationPixelFormat,
@@ -185,18 +188,70 @@ typedef struct
 
 typedef struct
 {
-	const kir_u8*		pSourcePixels;
-	kir_u8*				pDestinationPixels;
-	kir_u8*				pTranscodedPixels;
-	kir_filter_mode		filter;
-	kir_pixel_format	sourceFormat;
-	kir_pixel_format	destinationFormat;
-	kir_wrap_mode		wrapMode;
-	kir_u32				sourceWidth;
-	kir_u32				sourceHeight;
-	kir_u32				destinationWidth;
-	kir_u32				destinationHeight;
+ 	kir_u8* pData;
+ 	kir_u32 position;
+ 	kir_u32 sizeInBytes;
+} kir_allocation_buffer;
+
+typedef struct
+{
+	kir_allocation_buffer	allocationBuffer;
+	const kir_u8*			pSourcePixels;
+	kir_u8*					pDestinationPixels;
+	kir_u8*					pTranscodedPixels;
+	kir_filter_mode			filterMode;
+	kir_pixel_format		sourcePixelFormat;
+	kir_pixel_format		destinationPixelFormat;
+	kir_wrap_mode			wrapMode;
+	kir_u32					sourceWidth;
+	kir_u32					sourceHeight;
+	kir_u32					destinationWidth;
+	kir_u32					destinationHeight;
 } kir_resize_context;
+
+kir_internal kir_allocation_buffer _K15_IRCreateAllocationBuffer(kir_u8* pBuffer, kir_u32 bufferSizeInBytes)
+{
+	kir_allocation_buffer allocationBuffer;
+	allocationBuffer.pData 			= pBuffer;
+	allocationBuffer.sizeInBytes 	= bufferSizeInBytes;
+	allocationBuffer.position		= 0u;
+
+	return allocationBuffer;
+}
+
+kir_internal kir_u8* _K15_IRAllocateFromAllocationBuffer(kir_allocation_buffer* pAllocationBuffer, kir_u32 sizeInBytes)
+{
+	if (pAllocationBuffer->position + sizeInBytes > pAllocationBuffer->sizeInBytes)
+	{
+		return 0;
+	}
+
+	kir_u8* pMemory = pAllocationBuffer->pData + pAllocationBuffer->position;
+	pAllocationBuffer->position += sizeInBytes;
+
+	return pMemory;
+}
+
+kir_internal kir_u8* _K15_IRAllocateAndClearFromAllocationBuffer(kir_allocation_buffer* pAllocationBuffer, kir_u32 sizeInBytes)
+{
+	kir_u8* pMemory = _K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, sizeInBytes);
+
+	if (pMemory != 0)
+	{
+		for (kir_u32 memoryIndex = 0u; memoryIndex < sizeInBytes; ++memoryIndex)
+		{
+			pMemory[memoryIndex] = 0u;
+		}
+	}
+
+	return pMemory;
+}
+
+kir_internal void _K15_IRFreeToAllocationBuffer(kir_allocation_buffer* pAllocationBuffer, kir_u32 sizeInBytes)
+{
+	//FK:	We do no checks whatsoever, since we can control the order in which we free/allocate memory
+	pAllocationBuffer->position -= sizeInBytes;
+}
 
 kir_internal kir_u8 _K15_IRCubicHermiteU8(float factor, kir_u8 value1, kir_u8 value2, kir_u8 value3, kir_u8 value4)
 {
@@ -589,13 +644,14 @@ kir_internal void _K15_IRTranscodeFromR8G8B8A8ToR8G8B8(const kir_u8* pInputPixel
 
 kir_internal void _K15_IRTranscodeSourcePixelsToDestinationPixelFormat(kir_resize_context* pContext)
 {
-	kir_pixel_format sourceFormat = pContext->sourceFormat;
-	kir_pixel_format destinationFormat = pContext->destinationFormat;
+	const kir_pixel_format sourceFormat 		= pContext->sourcePixelFormat;
+	const kir_pixel_format destinationFormat 	= pContext->destinationPixelFormat;
 
 	//FK: check if we actually have to transcode pixels
 	if (sourceFormat != destinationFormat)
 	{
-		kir_u8* pTranscodedPixels = ( kir_u8* )K15_IR_MALLOC( pContext->sourceWidth * pContext->sourceHeight * kir_format_to_byte_lut[destinationFormat] );
+		const kir_u32 tempPixelBufferSizeInBytes =  pContext->sourceWidth * pContext->sourceHeight * kir_format_to_byte_lut[destinationFormat];
+		kir_u8* pTranscodedPixels = ( kir_u8* )_K15_IRAllocateFromAllocationBuffer( &pContext->allocationBuffer, tempPixelBufferSizeInBytes);
 
 		if (sourceFormat == K15_IR_PIXEL_FORMAT_R8 && destinationFormat == K15_IR_PIXEL_FORMAT_R8A8)
 			_K15_IRTranscodeFromR8ToR8G8(pContext->pSourcePixels, pTranscodedPixels, pContext->sourceWidth, pContext->sourceHeight);
@@ -654,56 +710,38 @@ kir_internal kir_u32 _K15_IRGetWrappedCoordinate(kir_s32 pos,
 	return pos;
 }
 
-kir_internal kir_u32 _K15_IRGetWrappedIndex(kir_s32 posX, kir_s32 posY, 
-	kir_u32 width, kir_u32 height, kir_wrap_mode wrapMode)
-{
-	posX = _K15_IRGetWrappedCoordinate(posX, width, wrapMode);
-	posY = _K15_IRGetWrappedCoordinate(posY, height, wrapMode);
-
-	return (posX + (posY * width));
-}
-
-kir_internal void _K15_IRSampleNearestNeighbour(const kir_u8* pSourcePixels, kir_u8* pDestinationPixels, 
+kir_internal void _K15_IRSampleNearestNeighbour(kir_allocation_buffer* pAllocationBuffer, const kir_u8* pSourcePixels, kir_u8* pDestinationPixels, 
 	kir_u32 sourceWidth, kir_u32 sourceHeight, kir_u32 destinationWidth, kir_u32 destinationHeight,
 	kir_pixel_format pixelFormat)
 {
-	kir_u32 sourcePosX = 0;
-	kir_u32 sourcePosY = 0;
+	const kir_u32 bpp = kir_format_to_byte_lut[pixelFormat];
+	kir_u8* pixelBuffer = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
 
-	kir_u32 destinationPosX = 0;
 	kir_u32 destinationPosY = 0;
-
-	float u = 0.f;
-	float v = 0.f;
-
-	kir_u32 sourcePixelIndex = 0;
-	kir_u32 destinationPixelIndex = 0;
-
-	kir_u32 bpp = kir_format_to_byte_lut[pixelFormat];
-	kir_u8* pixelBuffer = (kir_u8*)K15_IR_ALLOCA(bpp);
-
-	for (destinationPosY = 0; destinationPosY < destinationHeight; ++destinationPosY)
+	for (; destinationPosY < destinationHeight; ++destinationPosY)
 	{
-		v = (float)destinationPosY / (float)destinationHeight;
-		sourcePosY = (kir_u32)(v * (float)sourceHeight);
-		
-		for (destinationPosX = 0; destinationPosX < destinationWidth; ++destinationPosX)
+		const float v 				= (float)destinationPosY / (float)destinationHeight;
+		const kir_u32 sourcePosY 	= (kir_u32)(v * (float)sourceHeight);
+
+		kir_u32 destinationPosX = 0;		
+		for (; destinationPosX < destinationWidth; ++destinationPosX)
 		{
-			u = (float)destinationPosX / (float)destinationWidth;
+			const float u 				= (float)destinationPosX / (float)destinationWidth;
+			const kir_u32 sourcePosX 	= (kir_u32)(u * (float)sourceWidth);
 
-			sourcePosX = (kir_u32)(u * (float)sourceWidth);
-
-			sourcePixelIndex = sourcePosX + (sourcePosY * sourceWidth);
-			destinationPixelIndex = destinationPosX + (destinationPosY * destinationWidth);
+			const kir_u32 sourcePixelIndex = sourcePosX + (sourcePosY * sourceWidth);
+			const kir_u32 destinationPixelIndex = destinationPosX + (destinationPosY * destinationWidth);
 			
 			_K15_IRReadPixelFromIndex(sourcePixelIndex, pixelFormat, pSourcePixels, pixelBuffer);
 			_K15_IRWritePixelToIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, pixelBuffer);
 		}	
 	}
+
+	_K15_IRFreeToAllocationBuffer(pAllocationBuffer, bpp);
 }
 
 kir_internal void _K15_IRCalculateBilinearIndexTableForScanline(kir_u32 sourceWidth, kir_u32 destinationWidth, 
-	kir_wrap_mode wrapMode, kir_bilinear_index* indexTable)
+	kir_wrap_mode wrapMode, kir_bilinear_index* pIndexTable)
 {
 	kir_u32 sourcePosX = 0;
 	kir_u32 destinationPosX = 0;
@@ -720,82 +758,75 @@ kir_internal void _K15_IRCalculateBilinearIndexTableForScanline(kir_u32 sourceWi
 		sourcePosX = (kir_u32)K15_IR_FLOORF(sourcePosXFract);
 		t = sourcePosXFract - (float)sourcePosX;
 
-		indexTable[indexTablePos].i1 = _K15_IRGetWrappedCoordinate(sourcePosX + 0, sourceWidth, wrapMode); 
-		indexTable[indexTablePos].i2 = _K15_IRGetWrappedCoordinate(sourcePosX + 1, sourceWidth, wrapMode); 
-		indexTable[indexTablePos].t  = t;
+		pIndexTable[indexTablePos].i1 = _K15_IRGetWrappedCoordinate(sourcePosX + 0, sourceWidth, wrapMode); 
+		pIndexTable[indexTablePos].i2 = _K15_IRGetWrappedCoordinate(sourcePosX + 1, sourceWidth, wrapMode); 
+		pIndexTable[indexTablePos].t  = t;
 	} 
 }
 
-kir_internal void _K15_IRHorizontallySampleBilinear(const kir_u8* pSourcePixels, kir_u8* pDestinationPixels,
+kir_internal void _K15_IRHorizontallySampleBilinear(kir_allocation_buffer* pAllocationBuffer, const kir_u8* pSourcePixels, kir_u8* pDestinationPixels,
 	kir_u16 sourceWidth, kir_u16 sourceHeight, kir_u16 destinationWidth, kir_u16 destinationHeight,
 	kir_pixel_format pixelFormat, kir_wrap_mode wrapMode)
 {
-	kir_u32 sourcePosY = 0;
+	const kir_u32 bpp = kir_format_to_byte_lut[pixelFormat];
+	kir_u8* pInputPixelBuffer1 = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
+	kir_u8* pInputPixelBuffer2 = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
+	kir_u8* pOutputPixelBuffer = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
 
-	kir_u32 destinationPosX = 0;
-	kir_u32 destinationPosY = 0;
-
-	kir_u32 sourcePixelIndex1 = 0;
-	kir_u32 sourcePixelIndex2 = 0;
-
-	float t = 0.f;
-
-	kir_u32 destinationPixelIndex = 0;
-	kir_u32 componentIndex = 0;
-
-	kir_u32 bpp = kir_format_to_byte_lut[pixelFormat];
-	kir_u8* inputPixelBuffer1 = (kir_u8*)K15_IR_ALLOCA(bpp);
-	kir_u8* inputPixelBuffer2 = (kir_u8*)K15_IR_ALLOCA(bpp);
-	kir_u8* outputPixelBuffer = (kir_u8*)K15_IR_ALLOCA(bpp);
-
-	kir_u32 scanlineSizeInBytes = bpp * sourceWidth;
-	kir_u32 scanlineOffsetInBytes = 0;
-	kir_u8* scanlineBuffer = (kir_u8*)K15_IR_MALLOC(scanlineSizeInBytes);
+	const kir_u32 scanlineSizeInBytes 	= bpp * sourceWidth;
+	kir_u8* pScanlineBuffer 			= (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, scanlineSizeInBytes);
 
 	//FK: There'll be one entry for each horizontal destination pixel.
-	kir_u32 numIndexTableEntries			= destinationWidth;
-	kir_u32 indexTableSizeInBytes			= numIndexTableEntries * sizeof(kir_bilinear_index);
-	kir_u32 indexTablePos					= 0;
-	kir_bilinear_index* scanlineIndexTable	= (kir_bilinear_index*)K15_IR_MALLOC(indexTableSizeInBytes);
+	const kir_u32 indexTableSizeInBytes		= destinationWidth * sizeof(kir_bilinear_index);
+	kir_bilinear_index* pScanlineIndexTable	= (kir_bilinear_index*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, indexTableSizeInBytes);
 
 	//FK: Fill the index table. Basically for each horizontal destination pixel, the
 	//	  2 contribution source pixels together with the blend factor is calculated.
-	_K15_IRCalculateBilinearIndexTableForScanline(sourceWidth, destinationWidth, wrapMode, scanlineIndexTable);
+	_K15_IRCalculateBilinearIndexTableForScanline(sourceWidth, destinationWidth, wrapMode, pScanlineIndexTable);
 
+	kir_u32 destinationPosY = 0u;
+	kir_u32 sourcePosY 		= 0;
 	for (sourcePosY = 0; sourcePosY < sourceHeight; ++sourcePosY, ++destinationPosY)
 	{
 		//FK: Get scan line for current Y position.
-		scanlineOffsetInBytes = sourcePosY * sourceWidth * bpp;		
-		K15_IR_MEMCPY(scanlineBuffer, pSourcePixels + scanlineOffsetInBytes, scanlineSizeInBytes);
+		const kir_u32 scanlineOffsetInBytes = sourcePosY * sourceWidth * bpp;		
+		K15_IR_MEMCPY(pScanlineBuffer, pSourcePixels + scanlineOffsetInBytes, scanlineSizeInBytes);
 
+		kir_u32 destinationPosX = 0;
+		kir_u32 indexTablePos 	= 0;
 		for (destinationPosX = 0, indexTablePos = 0; destinationPosX < destinationWidth; ++destinationPosX, ++indexTablePos)
 		{
 			//FK: Calculate index where we write the interpolated pixel to
-			destinationPixelIndex = (destinationPosY + (destinationPosX * destinationHeight));
+			const kir_u32 destinationPixelIndex = (destinationPosY + (destinationPosX * destinationHeight));
 
-			sourcePixelIndex1 = scanlineIndexTable[indexTablePos].i1;
-			sourcePixelIndex2 = scanlineIndexTable[indexTablePos].i2;
-			t = scanlineIndexTable[indexTablePos].t;
+			const kir_u32 	sourcePixelIndex1 	= pScanlineIndexTable[indexTablePos].i1;
+			const kir_u32 	sourcePixelIndex2 	= pScanlineIndexTable[indexTablePos].i2;
+			const float		t 					= pScanlineIndexTable[indexTablePos].t;
 
 			//FK: Read pixels to interpolate
-			_K15_IRReadPixelFromIndex(sourcePixelIndex1, pixelFormat, scanlineBuffer, inputPixelBuffer1);
-			_K15_IRReadPixelFromIndex(sourcePixelIndex2, pixelFormat, scanlineBuffer, inputPixelBuffer2);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex1, pixelFormat, pScanlineBuffer, pInputPixelBuffer1);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex2, pixelFormat, pScanlineBuffer, pInputPixelBuffer2);
 
 			//FK: Read pixel to accumulate - add interpolated value to existing pixel values 
-			_K15_IRReadPixelFromIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, outputPixelBuffer);
+			_K15_IRReadPixelFromIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, pOutputPixelBuffer);
 
+			kir_u32 componentIndex = 0;
 			for (componentIndex = 0; componentIndex < bpp; ++componentIndex)
 			{
-				kir_u8 lerpedComponent = _K15_IRLerpU8(t, inputPixelBuffer1[componentIndex], inputPixelBuffer2[componentIndex]);
-				outputPixelBuffer[componentIndex] += lerpedComponent;
-			}
-			_K15_IRWritePixelToIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, outputPixelBuffer);
+				kir_u8 lerpedComponent = _K15_IRLerpU8(t, pInputPixelBuffer1[componentIndex], pInputPixelBuffer2[componentIndex]);
+				pOutputPixelBuffer[componentIndex] += lerpedComponent;
+			}	
+			_K15_IRWritePixelToIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, pOutputPixelBuffer);
 		}
 	}
+
+	_K15_IRFreeToAllocationBuffer(pAllocationBuffer, indexTableSizeInBytes);
+	_K15_IRFreeToAllocationBuffer(pAllocationBuffer, scanlineSizeInBytes);
+	_K15_IRFreeToAllocationBuffer(pAllocationBuffer, bpp * 3u);
 }
 
 kir_internal void _K15_IRCalculateBicubicIndexTableForScanline(kir_u32 sourceWidth, 
-	kir_u32 destinationWidth, kir_wrap_mode wrapMode, kir_bicubic_index* indexTable)
+	kir_u32 destinationWidth, kir_wrap_mode wrapMode, kir_bicubic_index* pIndexTable)
 {
 	kir_u32 sourcePosX = 0;
 	kir_u32 destinationPosX = 0;
@@ -812,199 +843,221 @@ kir_internal void _K15_IRCalculateBicubicIndexTableForScanline(kir_u32 sourceWid
 		sourcePosX = (kir_u32)K15_IR_FLOORF(sourcePosXFract);
 		t = sourcePosXFract - (float)sourcePosX;
 
-		indexTable[indexTablePos].i1 = _K15_IRGetWrappedCoordinate(sourcePosX - 1, sourceWidth, wrapMode); 
-		indexTable[indexTablePos].i2 = _K15_IRGetWrappedCoordinate(sourcePosX + 0, sourceWidth, wrapMode); 
-		indexTable[indexTablePos].i3 = _K15_IRGetWrappedCoordinate(sourcePosX + 1, sourceWidth, wrapMode); 
-		indexTable[indexTablePos].i4 = _K15_IRGetWrappedCoordinate(sourcePosX + 2, sourceWidth, wrapMode); 
-		indexTable[indexTablePos].t  = t;
+		pIndexTable[indexTablePos].i1 = _K15_IRGetWrappedCoordinate(sourcePosX - 1, sourceWidth, wrapMode); 
+		pIndexTable[indexTablePos].i2 = _K15_IRGetWrappedCoordinate(sourcePosX + 0, sourceWidth, wrapMode); 
+		pIndexTable[indexTablePos].i3 = _K15_IRGetWrappedCoordinate(sourcePosX + 1, sourceWidth, wrapMode); 
+		pIndexTable[indexTablePos].i4 = _K15_IRGetWrappedCoordinate(sourcePosX + 2, sourceWidth, wrapMode); 
+		pIndexTable[indexTablePos].t  = t;
 	} 
 }
 
-kir_internal void _K15_IRHorizontallySampleBicubic(const kir_u8* pSourcePixels, kir_u8* pDestinationPixels,
+kir_internal void _K15_IRHorizontallySampleBicubic(kir_allocation_buffer* pAllocationBuffer, const kir_u8* pSourcePixels, kir_u8* pDestinationPixels,
 	kir_u16 sourceWidth, kir_u16 sourceHeight, kir_u16 destinationWidth, kir_u16 destinationHeight,
 	kir_pixel_format pixelFormat, kir_wrap_mode wrapMode)
 {
-	kir_u32 sourcePosY = 0;
+	const kir_u32 bpp = kir_format_to_byte_lut[pixelFormat];
 
-	kir_u32 destinationPosX = 0;
-	kir_u32 destinationPosY = 0;
+	kir_u8* pInputPixelBuffer1 = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
+	kir_u8* pInputPixelBuffer2 = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
+	kir_u8* pInputPixelBuffer3 = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
+	kir_u8* pInputPixelBuffer4 = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
+	kir_u8* pOutputPixelBuffer = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, bpp);
 
-	kir_u32 sourcePixelIndex1 = 0;
-	kir_u32 sourcePixelIndex2 = 0;
-	kir_u32 sourcePixelIndex3 = 0;
-	kir_u32 sourcePixelIndex4 = 0;
-
-	float t = 0.f;
-
-	kir_u32 destinationPixelIndex = 0;
-	kir_u32 componentIndex = 0;
-
-	kir_u32 bpp = kir_format_to_byte_lut[pixelFormat];
-	kir_u8* inputPixelBuffer1 = (kir_u8*)K15_IR_ALLOCA(bpp);
-	kir_u8* inputPixelBuffer2 = (kir_u8*)K15_IR_ALLOCA(bpp);
-	kir_u8* inputPixelBuffer3 = (kir_u8*)K15_IR_ALLOCA(bpp);
-	kir_u8* inputPixelBuffer4 = (kir_u8*)K15_IR_ALLOCA(bpp);
-	kir_u8* outputPixelBuffer = (kir_u8*)K15_IR_ALLOCA(bpp);
-
-	kir_u32 scanlineSizeInBytes = bpp * sourceWidth;
-	kir_u32 scanlineOffsetInBytes = 0;
-	kir_u8* scanlineBuffer = (kir_u8*)K15_IR_MALLOC(scanlineSizeInBytes);
+	const kir_u32 scanlineSizeInBytes = bpp * sourceWidth;
+	kir_u8* pScanlineBuffer = (kir_u8*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, scanlineSizeInBytes);
 
 	//FK: There'll be one entry for each horizontal destination pixel.
-	kir_u32 numIndexTableEntries = destinationWidth;
-	kir_u32 indexTableSizeInBytes = numIndexTableEntries * sizeof(kir_bicubic_index);
-	kir_u32 indexTablePos = 0;
-	kir_bicubic_index* scanlineIndexTable = (kir_bicubic_index*)K15_IR_MALLOC(indexTableSizeInBytes);
+	const kir_u32 indexTableSizeInBytes = destinationWidth * sizeof(kir_bicubic_index);
+	kir_bicubic_index* pScanlineIndexTable = (kir_bicubic_index*)_K15_IRAllocateFromAllocationBuffer(pAllocationBuffer, indexTableSizeInBytes);
 
 	//FK: Fill the index table. Basically for each horizontal destination pixel, the
 	//	  4 contribution source pixels together with the blend factor is calculated.
-	_K15_IRCalculateBicubicIndexTableForScanline(sourceWidth, destinationWidth, 
-		wrapMode, scanlineIndexTable);
+	_K15_IRCalculateBicubicIndexTableForScanline(sourceWidth, destinationWidth, wrapMode, pScanlineIndexTable);
 
-	for (sourcePosY = 0; sourcePosY < sourceHeight; ++sourcePosY, ++destinationPosY)
+	kir_u32 sourcePosY 		= 0u;
+	kir_u32 destinationPosY = 0u;
+	for (; sourcePosY < sourceHeight; ++sourcePosY, ++destinationPosY)
 	{
 		//FK: Get scan line for current Y position.
-		scanlineOffsetInBytes = sourcePosY * sourceWidth * bpp;		
-		K15_IR_MEMCPY(scanlineBuffer, pSourcePixels + scanlineOffsetInBytes, scanlineSizeInBytes);
+		const kir_u32 scanlineOffsetInBytes = sourcePosY * sourceWidth * bpp;		
+		K15_IR_MEMCPY(pScanlineBuffer, pSourcePixels + scanlineOffsetInBytes, scanlineSizeInBytes);
 
-		for (destinationPosX = 0, indexTablePos = 0; 
-			destinationPosX < destinationWidth; 
-			++destinationPosX, ++indexTablePos)
+		kir_u32 destinationPosX = 0;
+		kir_u32 indexTablePos 	= 0;
+		for (; destinationPosX < destinationWidth; ++destinationPosX, ++indexTablePos)
 		{
 			//FK: Calculate index where we write the interpolated pixel to
-			destinationPixelIndex = (destinationPosY + (destinationPosX * destinationHeight));
+			const kir_u32 destinationPixelIndex = (destinationPosY + (destinationPosX * destinationHeight));
 
-			sourcePixelIndex1 = scanlineIndexTable[indexTablePos].i1;
-			sourcePixelIndex2 = scanlineIndexTable[indexTablePos].i2;
-			sourcePixelIndex3 = scanlineIndexTable[indexTablePos].i3;
-			sourcePixelIndex4 = scanlineIndexTable[indexTablePos].i4;
-			t = scanlineIndexTable[indexTablePos].t;
+			const kir_u32 sourcePixelIndex1 = pScanlineIndexTable[indexTablePos].i1;
+			const kir_u32 sourcePixelIndex2 = pScanlineIndexTable[indexTablePos].i2;
+			const kir_u32 sourcePixelIndex3 = pScanlineIndexTable[indexTablePos].i3;
+			const kir_u32 sourcePixelIndex4 = pScanlineIndexTable[indexTablePos].i4;
+			const float	t 					= pScanlineIndexTable[indexTablePos].t;
 
 			//FK: Read pixels to interpolate
-			_K15_IRReadPixelFromIndex(sourcePixelIndex1, pixelFormat, scanlineBuffer, inputPixelBuffer1);
-			_K15_IRReadPixelFromIndex(sourcePixelIndex2, pixelFormat, scanlineBuffer, inputPixelBuffer2);
-			_K15_IRReadPixelFromIndex(sourcePixelIndex3, pixelFormat, scanlineBuffer, inputPixelBuffer3);
-			_K15_IRReadPixelFromIndex(sourcePixelIndex4, pixelFormat, scanlineBuffer, inputPixelBuffer4);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex1, pixelFormat, pScanlineBuffer, pInputPixelBuffer1);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex2, pixelFormat, pScanlineBuffer, pInputPixelBuffer2);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex3, pixelFormat, pScanlineBuffer, pInputPixelBuffer3);
+			_K15_IRReadPixelFromIndex(sourcePixelIndex4, pixelFormat, pScanlineBuffer, pInputPixelBuffer4);
 
 			//FK: Read pixel to accumulate - add interpolated value to existing pixel values 
-			_K15_IRReadPixelFromIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, outputPixelBuffer);
+			_K15_IRReadPixelFromIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, pOutputPixelBuffer);
 
-			for (componentIndex = 0; componentIndex < bpp; ++componentIndex)
+			kir_u32 componentIndex = 0u;
+			for (componentIndex; componentIndex < bpp; ++componentIndex)
 			{
-				kir_u8 lerpedComponent = _K15_IRCubicHermiteU8(t,
-					inputPixelBuffer1[componentIndex],
-					inputPixelBuffer2[componentIndex],
-					inputPixelBuffer3[componentIndex],
-					inputPixelBuffer4[componentIndex]);
-
-				outputPixelBuffer[componentIndex] += lerpedComponent;
+				const kir_u8 lerpedComponent = _K15_IRCubicHermiteU8(t, pInputPixelBuffer1[componentIndex], pInputPixelBuffer2[componentIndex], pInputPixelBuffer3[componentIndex], pInputPixelBuffer4[componentIndex]);
+				pOutputPixelBuffer[componentIndex] += lerpedComponent;
 			}
-			_K15_IRWritePixelToIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, outputPixelBuffer);
+			_K15_IRWritePixelToIndex(destinationPixelIndex, pixelFormat, pDestinationPixels, pOutputPixelBuffer);
 		}
 	}
+
+	_K15_IRFreeToAllocationBuffer(pAllocationBuffer, indexTableSizeInBytes);
+	_K15_IRFreeToAllocationBuffer(pAllocationBuffer, bpp * 5u);
 }
 
 kir_internal kir_result _K15_IRResample(kir_resize_context* pContext)
 {
-	kir_filter_mode filter			= pContext->filter;
-	const kir_u8* sourcePixels		= (pContext->pTranscodedPixels ? pContext->pTranscodedPixels : pContext->pSourcePixels);
-	kir_u8* destinationPixels		= pContext->pDestinationPixels;
-	kir_u32 destinationWidth		= pContext->destinationWidth;
-	kir_u32 destinationHeight		= pContext->destinationHeight;
-	kir_u32 sourceHeight			= pContext->sourceHeight;
-	kir_u32 sourceWidth				= pContext->sourceWidth;
-	kir_wrap_mode wrapMode			= pContext->wrapMode;
-	kir_pixel_format pixelFormat	= pContext->destinationFormat;
+	const kir_u8* pSourcePixels						= (pContext->pTranscodedPixels ? pContext->pTranscodedPixels : pContext->pSourcePixels);
+	const kir_u32 destinationPixelDataSizeInBytes 	= pContext->destinationWidth * pContext->destinationHeight * kir_format_to_byte_lut[pContext->destinationPixelFormat];
 
-	int bpp = kir_format_to_byte_lut[pContext->destinationFormat];
-
-	kir_u32 destinationPixelDataSizeInBytes = destinationWidth * destinationHeight * bpp;
-	K15_IR_MEMSET(destinationPixels, 0, destinationPixelDataSizeInBytes);
-
-	if (filter == K15_IR_NEAREST_NEIGHBOUR_FILTER_MODE)
+	if (pContext->filterMode == K15_IR_NEAREST_NEIGHBOUR_FILTER_MODE)
 	{
-		_K15_IRSampleNearestNeighbour(sourcePixels, pContext->pDestinationPixels,
-			pContext->sourceWidth, pContext->sourceHeight, pContext->destinationWidth, 
-			pContext->destinationHeight, pContext->destinationFormat);
+		_K15_IRSampleNearestNeighbour(&pContext->allocationBuffer, pSourcePixels, pContext->pDestinationPixels, pContext->sourceWidth, pContext->sourceHeight, pContext->destinationWidth, 
+			pContext->destinationHeight, pContext->destinationPixelFormat);
 	}
-	else if (filter == K15_IR_BILINEAR_FILTER_MODE ||
-		filter == K15_IR_BICUBIC_FILTER_MODE)
+	else if (pContext->filterMode == K15_IR_BILINEAR_FILTER_MODE ||
+		pContext->filterMode == K15_IR_BICUBIC_FILTER_MODE)
 	{
-		kir_u32 tempWidth = destinationWidth;
-		kir_u32 tempHeight = sourceHeight;
+		const 	kir_u32 tempBufferSizeInBytes	= pContext->destinationWidth * pContext->sourceHeight * kir_format_to_byte_lut[pContext->destinationPixelFormat];
+				kir_u8* pHorizontalTempBuffer	= (kir_u8*)_K15_IRAllocateAndClearFromAllocationBuffer(&pContext->allocationBuffer, tempBufferSizeInBytes);
 
-		kir_pixel_format format			= pContext->destinationFormat;
-		kir_u32 bpp						= kir_format_to_byte_lut[format];
-		kir_u32 tempBufferSizeInBytes	= tempWidth * tempHeight * bpp;
-		kir_u8* horizontalTempBuffer	= (kir_u8*)K15_IR_MALLOC(tempBufferSizeInBytes);
-		K15_IR_MEMSET(horizontalTempBuffer, 0, tempBufferSizeInBytes);
-
-		if (filter == K15_IR_BILINEAR_FILTER_MODE)
+		if (pContext->filterMode == K15_IR_BILINEAR_FILTER_MODE)
 		{
-			_K15_IRHorizontallySampleBilinear(sourcePixels, horizontalTempBuffer, 
-				sourceWidth, sourceHeight, 
-				tempWidth, tempHeight, 
-				pixelFormat, wrapMode);
+			_K15_IRHorizontallySampleBilinear(&pContext->allocationBuffer, pSourcePixels, pHorizontalTempBuffer, pContext->sourceWidth, pContext->sourceHeight, 
+				pContext->destinationWidth, pContext->sourceHeight, pContext->destinationPixelFormat, pContext->wrapMode);
 		
-			//FK: Image now vertically aligned as opposed to horizintally.
+			//FK: Image now vertically aligned as opposed to horizontally.
 			//	  Lets switch width and height, so everything is back to "normal".
-			tempWidth	= sourceHeight;
-			tempHeight	= destinationWidth;
-
-			destinationWidth	= pContext->destinationHeight;
-			destinationHeight	= pContext->destinationWidth;
-
-			_K15_IRHorizontallySampleBilinear(horizontalTempBuffer, destinationPixels, 
-				tempWidth, tempHeight, 
-				destinationWidth, destinationHeight,
-				pixelFormat, wrapMode);
+			_K15_IRHorizontallySampleBilinear(&pContext->allocationBuffer, pHorizontalTempBuffer, pContext->pDestinationPixels, pContext->sourceHeight, pContext->destinationWidth, 
+				pContext->destinationHeight, pContext->destinationHeight, pContext->destinationPixelFormat, pContext->wrapMode);
 		}
-		else if (filter == K15_IR_BICUBIC_FILTER_MODE)
+		else if (pContext->filterMode == K15_IR_BICUBIC_FILTER_MODE)
 		{
-			_K15_IRHorizontallySampleBicubic(sourcePixels, horizontalTempBuffer,
-				sourceWidth, sourceHeight,
-				tempWidth, tempHeight,
-				pixelFormat, wrapMode);
+			_K15_IRHorizontallySampleBicubic(&pContext->allocationBuffer, pSourcePixels, pHorizontalTempBuffer, pContext->sourceWidth, pContext->sourceHeight, 
+				pContext->destinationWidth, pContext->sourceHeight, pContext->destinationPixelFormat, pContext->wrapMode);
 
-			//FK: Image now vertically aligned as opposed to horizintally.
+			//FK: Image now vertically aligned as opposed to horizontally.
 			//	  Lets switch width and height, so everything is back to "normal".
-			tempWidth = sourceHeight;
-			tempHeight = destinationWidth;
-
-			destinationWidth = pContext->destinationHeight;
-			destinationHeight = pContext->destinationWidth;
-
-			_K15_IRHorizontallySampleBicubic(horizontalTempBuffer, destinationPixels, 
-				tempWidth, tempHeight, 
-				destinationWidth, destinationHeight,
-				pixelFormat, wrapMode);
+			_K15_IRHorizontallySampleBicubic(&pContext->allocationBuffer, pHorizontalTempBuffer, pContext->pDestinationPixels, pContext->sourceHeight, pContext->destinationWidth, 
+				pContext->destinationWidth, pContext->destinationHeight, pContext->destinationPixelFormat, pContext->wrapMode);
 		}
 
+		_K15_IRFreeToAllocationBuffer(&pContext->allocationBuffer, tempBufferSizeInBytes);
 	}
 
 	return K15_IR_RESULT_SUCCESS;
 }
 
-kir_result K15_IRScaleImageData(const kir_u8* pSourcePixels, kir_u32 sourceWidth, kir_u32 sourceHeight, kir_pixel_format sourcePixelFormat,
-	kir_u8* pDestinationPixels, kir_u32 destinationWIdth, kir_u32 destinationHeight, kir_pixel_format destinationPixelFormat,
+unsigned int K15_IRGetRequiredMemorySizeInBytes(unsigned int sourceWidth, unsigned int sourceHeight, kir_pixel_format sourcePixelFormat,
+	unsigned int destinationWidth, unsigned int destinationHeight, kir_pixel_format destinationPixelFormat, 
+	kir_filter_mode filterMode)
+{
+	kir_u32 requiredMemorySizeInBytes = 0u;
+
+	if (destinationPixelFormat != sourcePixelFormat)
+	{
+		const kir_u8 	destinationPixelSizeInBytes = kir_format_to_byte_lut[destinationPixelFormat];
+		const kir_u32 	pixelBufferSizeInBytes		= destinationPixelSizeInBytes * sourceWidth * sourceHeight;
+		requiredMemorySizeInBytes += pixelBufferSizeInBytes;
+	}	
+
+	const kir_u32 bpp = kir_format_to_byte_lut[destinationPixelFormat];
+
+	if (filterMode == K15_IR_NEAREST_NEIGHBOUR_FILTER_MODE)
+	{
+		//FK:	Add size to store one pixel
+		requiredMemorySizeInBytes += bpp;
+	}
+	else if (filterMode == K15_IR_BILINEAR_FILTER_MODE)
+	{
+		//FK:	Add size to store 3 pixel
+		requiredMemorySizeInBytes += bpp * 3u;
+
+		//FK:	Add size for one source scanline
+		requiredMemorySizeInBytes += bpp * K15_IR_MAX(sourceWidth, sourceHeight);
+
+		//FK: 	Add size for index table
+		requiredMemorySizeInBytes += K15_IR_MAX(destinationWidth, destinationHeight) * sizeof(kir_bilinear_index);
+
+		//FK:	Add size for horizontal temp buffer
+		requiredMemorySizeInBytes += destinationWidth * sourceHeight * bpp;
+	}
+	else if (filterMode == K15_IR_BICUBIC_FILTER_MODE)
+	{
+		//FK:	Add size to store 5 pixel
+		requiredMemorySizeInBytes += bpp * 5u;
+
+		//FK:	Add size for one source scanline
+		requiredMemorySizeInBytes += bpp * K15_IR_MAX(sourceWidth, sourceHeight);
+
+		//FK: 	Add size for index table
+		requiredMemorySizeInBytes += K15_IR_MAX(destinationWidth, destinationHeight) * sizeof(kir_bicubic_index);
+
+		//FK:	Add size for horizontal temp buffer
+		requiredMemorySizeInBytes += destinationWidth * sourceHeight * bpp;
+	}
+
+	return requiredMemorySizeInBytes;
+}
+
+kir_result K15_IRScaleImageDataWithCustomMemory(unsigned char* pCustomMemory, unsigned int customMemorySizeInBytes,
+	const unsigned char* pSourcePixels, unsigned int sourceWidth, unsigned int sourceHeight, kir_pixel_format sourcePixelFormat,
+	unsigned char* pDestinationPixels, unsigned int destinationWidth, unsigned int destinationHeight, kir_pixel_format destinationPixelFormat,
 	kir_wrap_mode wrapMode, kir_filter_mode filterMode)
 {
 	kir_resize_context ctx = {0};
-
-	ctx.pSourcePixels 		= pSourcePixels;
-	ctx.pDestinationPixels 	= pDestinationPixels;
-	ctx.sourceWidth 		= sourceWidth;
-	ctx.sourceHeight 		= sourceHeight;
-	ctx.destinationWidth 	= destinationWIdth;
-	ctx.destinationHeight 	= destinationHeight;
-	ctx.sourceFormat 		= sourcePixelFormat;
-	ctx.destinationFormat 	= destinationPixelFormat;
-	ctx.wrapMode 			= wrapMode;
-	ctx.filter 				= filterMode;
+	ctx.allocationBuffer		= _K15_IRCreateAllocationBuffer(pCustomMemory, customMemorySizeInBytes);
+	ctx.pSourcePixels 			= pSourcePixels;
+	ctx.pDestinationPixels 		= pDestinationPixels;
+	ctx.sourceWidth 			= sourceWidth;
+	ctx.sourceHeight 			= sourceHeight;
+	ctx.destinationWidth 		= destinationWidth;
+	ctx.destinationHeight 		= destinationHeight;
+	ctx.destinationPixelFormat 	= destinationPixelFormat;
+	ctx.sourcePixelFormat 		= sourcePixelFormat;
+	ctx.wrapMode 				= wrapMode;
+	ctx.filterMode				= filterMode;
 
 	_K15_IRTranscodeSourcePixelsToDestinationPixelFormat(&ctx);
 
 	return _K15_IRResample(&ctx);
+}
+
+kir_result K15_IRScaleImageData(const kir_u8* pSourcePixels, kir_u32 sourceWidth, kir_u32 sourceHeight, kir_pixel_format sourcePixelFormat,
+	kir_u8* pDestinationPixels, kir_u32 destinationWidth, kir_u32 destinationHeight, kir_pixel_format destinationPixelFormat,
+	kir_wrap_mode wrapMode, kir_filter_mode filterMode)
+{
+	const kir_u32 workingBufferSizeInBytes = K15_IRGetRequiredMemorySizeInBytes( sourceWidth, sourceHeight, sourcePixelFormat,
+	 destinationWidth, destinationHeight, destinationPixelFormat, filterMode);
+
+	kir_u8* pWorkingBufferData = ( kir_u8* )K15_IR_MALLOC( workingBufferSizeInBytes );
+
+	if (!pWorkingBufferData)
+	{
+		return K15_IR_RESULT_OUT_OF_MEMORY;
+	}
+
+	const kir_result result = K15_IRScaleImageDataWithCustomMemory( pWorkingBufferData, workingBufferSizeInBytes, 
+		pSourcePixels, sourceWidth, sourceHeight, sourcePixelFormat,
+		pDestinationPixels, destinationWidth, destinationHeight, destinationPixelFormat,
+		wrapMode, filterMode ); 
+
+	K15_IR_FREE( pWorkingBufferData );
+
+	return result;
 }
 
 #endif //K15_IR_IMPLEMENTATION

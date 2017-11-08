@@ -293,7 +293,7 @@ void setup(HWND p_HWND)
 	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
-	sourceImageData = stbi_load("image3.png", &sourceImageWidth, &sourceImageHeight, 
+	sourceImageData = stbi_load("image4.png", &sourceImageWidth, &sourceImageHeight, 
 		&sourceImageColorComponents, 0);
 
 	free(sourceImageDataBGR);
@@ -457,7 +457,7 @@ extern void resizeFunction(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixel
 		p_SourceImagePixelHeight, p_SourceImageDataPixelFormat,
 		p_DestinationImageData, p_DestinationImagePixelWidth,
 		p_DestinationImagePixelHeight, p_DestinationImageDataPixelFormat,
-		K15_IR_WRAP_CLAMP, K15_IR_BICUBIC_FILTER_MODE);
+		K15_IR_WRAP_CLAMP, K15_IR_NEAREST_NEIGHBOUR_FILTER_MODE);
 }
 
 
