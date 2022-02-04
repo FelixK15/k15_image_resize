@@ -82,11 +82,11 @@ extern void resizeFunction(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixel
 
 void resizeImage()
 {
-	destinationImageWidth = sourceImageWidth / 2;
-	destinationImageHeight = sourceImageHeight / 2;
+	//destinationImageWidth = sourceImageWidth / 2;
+	//destinationImageHeight = sourceImageHeight / 2;
 
-	//destinationImageWidth = sourceImageWidth * 16;
-	//destinationImageHeight = sourceImageHeight * 16;
+	destinationImageWidth = sourceImageWidth * 2;
+	destinationImageHeight = sourceImageHeight * 2;
 
 	if (destinationImageData)
 	{
