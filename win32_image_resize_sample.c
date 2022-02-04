@@ -16,13 +16,14 @@ typedef unsigned int uint32;
 typedef unsigned short uint16;
 typedef unsigned char uint8;
 
-#ifndef RESIZE_DLL
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+#define K15_IR_IMPLEMENTATION
+#include "k15_image_resize.h"
 
 typedef LRESULT(CALLBACK* WNDPROC)(HWND, UINT, WPARAM, LPARAM);
 
@@ -40,9 +41,6 @@ unsigned char* sourceImageData = 0;
 unsigned char* sourceImageDataBGR = 0;
 unsigned char* destinationImageData = 0;
 unsigned char* destinationImageDataBGR = 0;
-
-typedef void(*resizeFunctionType)(unsigned char*, uint32, uint32, int, unsigned char*, uint32,
-	uint32, int);
 
 unsigned char* convertToBGR(unsigned char* p_PixelData, uint32 p_Width, uint32 p_Height)
 {
@@ -68,51 +66,46 @@ unsigned char* convertToBGR(unsigned char* p_PixelData, uint32 p_Width, uint32 p
 	return dataBuffer;
 }
 
+
+extern void resizeFunction(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixelWidth, 
+	kir_u16 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
+	kir_u8* p_DestinationImageData, kir_u16 p_DestinationImagePixelWidth,
+	kir_u16 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
+{
+	K15_IRScaleImageData(p_SourceImageData, p_SourceImagePixelWidth, 
+		p_SourceImagePixelHeight, p_SourceImageDataPixelFormat,
+		p_DestinationImageData, p_DestinationImagePixelWidth,
+		p_DestinationImagePixelHeight, p_DestinationImageDataPixelFormat,
+		K15_IR_WRAP_CLAMP);
+}
+
+
 void resizeImage()
 {
-	HMODULE resizeLib = LoadLibraryA("k15_resize.dll");
+	destinationImageWidth = sourceImageWidth / 2;
+	destinationImageHeight = sourceImageHeight / 2;
 
-	if (resizeLib)
+	//destinationImageWidth = sourceImageWidth * 16;
+	//destinationImageHeight = sourceImageHeight * 16;
+
+	if (destinationImageData)
 	{
-		resizeFunctionType resizeFunction = 
-			(resizeFunctionType)GetProcAddress(resizeLib, "resizeFunction");
-
-		if (resizeFunction)
-		{
- 			// destinationImageWidth = sourceImageWidth / 2;
- 			// destinationImageHeight = sourceImageHeight / 2;
-
-			 destinationImageWidth = sourceImageWidth * 16;
-			 destinationImageHeight = sourceImageHeight * 16;
-
-
-			if (destinationImageData)
-			{
-				free(destinationImageData);
-				destinationImageData = 0;
-			}
-
-			destinationImageData = (unsigned char*)malloc(destinationImageHeight * destinationImageWidth * 3);
-
-			resizeFunction(sourceImageData, sourceImageWidth, sourceImageHeight, 
-				2, destinationImageData, destinationImageWidth, 
-				destinationImageHeight, 2);
-
-     		stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
-     		//exit(0);
-     		
-			free(destinationImageDataBGR);
-			destinationImageDataBGR = convertToBGR(destinationImageData, 
-				destinationImageWidth, destinationImageHeight);
-
-			BOOL result = FreeLibrary(resizeLib);
-
-			if (!result)
-			{
-				printf("Erro!");
-			}
-		}
+		free(destinationImageData);
+		destinationImageData = 0;
 	}
+
+	destinationImageData = (unsigned char*)malloc(destinationImageHeight * destinationImageWidth * 3);
+
+	resizeFunction(sourceImageData, sourceImageWidth, sourceImageHeight, 
+		K15_IR_PIXEL_FORMAT_R8A8B8, destinationImageData, destinationImageWidth, 
+		destinationImageHeight, K15_IR_PIXEL_FORMAT_R8A8B8);
+
+	stbi_write_png("output.png", destinationImageWidth, destinationImageHeight, 3, destinationImageData, destinationImageWidth * 3);
+	//exit(0);
+	
+	free(destinationImageDataBGR);
+	destinationImageDataBGR = convertToBGR(destinationImageData, 
+		destinationImageWidth, destinationImageHeight);
 }
 
 void printErrorToFile(const char* p_FileName)
@@ -293,7 +286,7 @@ void setup(HWND p_HWND)
 	resizeBackbuffer(p_HWND, screenWidth, screenHeight);
 
 	int sourceImageColorComponents = 0;
-	sourceImageData = stbi_load("image4.png", &sourceImageWidth, &sourceImageHeight, 
+	sourceImageData = stbi_load("image2.png", &sourceImageWidth, &sourceImageHeight, 
 		&sourceImageColorComponents, 0);
 
 	free(sourceImageDataBGR);
@@ -370,30 +363,8 @@ void drawImages(HWND p_HWND)
 	}
 }
 
-FILETIME libraryWriteTime = {0};
-
-void checkLibrary()
-{
-	HANDLE libraryFileHandle = CreateFileA("k15_resize.dll", GENERIC_READ, 0, 0, 
-		OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, 0);
-
-	if (libraryFileHandle != INVALID_HANDLE_VALUE)
-	{
-		FILETIME newLibraryWriteTime = {0};
-		GetFileTime(libraryFileHandle, 0, 0, &newLibraryWriteTime);
-		CloseHandle(libraryFileHandle);
-
-		if (CompareFileTime(&libraryWriteTime, &newLibraryWriteTime) == -1)
-		{
-			memcpy(&libraryWriteTime, &newLibraryWriteTime, sizeof(FILETIME));
-			resizeImage();
-		}
-	}
-}
-
 void doFrame(uint32 p_DeltaTimeInMS, HWND p_HWND)
 {
-	checkLibrary();
 	drawImages(p_HWND);
 	swapBuffers(p_HWND);
 }
@@ -443,22 +414,3 @@ int CALLBACK WinMain(HINSTANCE hInstance,
 
 	return 0;
 }
-
-#else
-# define K15_IR_IMPLEMENTATION
-# include "k15_image_resize.h"
-
-extern void resizeFunction(kir_u8* p_SourceImageData, kir_u16 p_SourceImagePixelWidth, 
-	kir_u16 p_SourceImagePixelHeight, kir_pixel_format p_SourceImageDataPixelFormat,
-	kir_u8* p_DestinationImageData, kir_u16 p_DestinationImagePixelWidth,
-	kir_u16 p_DestinationImagePixelHeight, kir_pixel_format p_DestinationImageDataPixelFormat)
-{
-	K15_IRScaleImageData(p_SourceImageData, p_SourceImagePixelWidth, 
-		p_SourceImagePixelHeight, p_SourceImageDataPixelFormat,
-		p_DestinationImageData, p_DestinationImagePixelWidth,
-		p_DestinationImagePixelHeight, p_DestinationImageDataPixelFormat,
-		K15_IR_WRAP_CLAMP);
-}
-
-
-#endif //RESIZE_DLL

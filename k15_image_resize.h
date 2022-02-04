@@ -38,10 +38,6 @@ K15 Image Resize v 1.0
 #ifndef _K15_ImageResize_h_
 #define _K15_ImageResize_h_
 
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
 #ifndef K15_IR_STATIC
 # define kir_def static
 #else
@@ -612,7 +608,7 @@ kir_internal void _K15_IRTranscodeSourcePixelsToDestinationPixelFormat(kir_resiz
 	//FK: check if we actually have to transcode pixels
 	if (sourceFormat != destinationFormat)
 	{
-		void* transcodedSourcePixels = K15_IR_MALLOC(sourceWidth * sourceHeight * kir_format_to_byte_lut[destinationFormat]);
+		kir_u8* transcodedSourcePixels = (kir_u8*)K15_IR_MALLOC(sourceWidth * sourceHeight * kir_format_to_byte_lut[destinationFormat]);
 
 		if (sourceFormat == K15_IR_PIXEL_FORMAT_R8 && destinationFormat == K15_IR_PIXEL_FORMAT_R8A8)
 			_K15_IRTranscodeFromR8ToR8G8(sourcePixels, transcodedSourcePixels, sourceWidth, sourceHeight);

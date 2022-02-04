@@ -1,1 +1,0 @@
-win32_image_resize_sample.exe
